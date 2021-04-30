@@ -2,6 +2,9 @@ cmake_minimum_required(VERSION 3.12)
 
 project(roq-samples)
 
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
+
 # conda
 
 if(DEFINED ENV{CONDA_PREFIX} AND NOT DEFINED ENV{CONDA_BUILD})
@@ -39,6 +42,8 @@ add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/src/roq/samples/example-3")
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/src/roq/samples/example-4")
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/src/roq/samples/example-5")
 add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/src/roq/samples/import")
+
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/src/roq/mmaker")
 
 # test
 

@@ -1,10 +1,15 @@
 set(TARGET_NAME "${PROJECT_NAME}-test")
 
-add_executable("${TARGET_NAME}" main.cpp)
+set(SOURCES
+    grid_order.cpp
+    main.cpp
+)
+
+add_executable("${TARGET_NAME}" "${SOURCES}")
 
 # target
 
-target_link_libraries("${TARGET_NAME}" roq-client::roq-client gtest_main)
+target_link_libraries("${TARGET_NAME}" roq-client::roq-client gtest_main absl::hash absl::raw_hash_set)
 
 target_compile_features("${TARGET_NAME}" PUBLIC cxx_std_17)
 
