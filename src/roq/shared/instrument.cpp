@@ -235,16 +235,17 @@ void Instrument::check_ready() {
   if (ROQ_UNLIKELY(ready_ != before))
     log::info("[{}:{}] ready={}"_fmt, exchange_, symbol_, ready_);
   if(ROQ_UNLIKELY((ready_counter_++)%10)==0) {
-    #define XXX(s) log::debug("[{}:{}] {} = {} "_fmt, exchange_, symbol_, #s, s);
-    XXX(tick_size_);
-    XXX(connected_);
-    XXX(download_);
-    XXX(tick_size_);
-    XXX(min_trade_vol_);
-    XXX(multiplier_);
-    XXX(trading_status_);
-    XXX(market_data_);
-    XXX(order_management_);
+    #define ROQ_DEBUG_FIELD(s) log::debug("[{}:{}] {} = {} "_fmt, exchange_, symbol_, #s, s);
+    ROQ_DEBUG_FIELD(tick_size_);
+    ROQ_DEBUG_FIELD(connected_);
+    ROQ_DEBUG_FIELD(download_);
+    ROQ_DEBUG_FIELD(tick_size_);
+    ROQ_DEBUG_FIELD(min_trade_vol_);
+    ROQ_DEBUG_FIELD(multiplier_);
+    ROQ_DEBUG_FIELD(trading_status_);
+    ROQ_DEBUG_FIELD(market_data_);
+    ROQ_DEBUG_FIELD(order_management_);
+    #undef ROQ_CHECK_FIELD
   }
 }
 

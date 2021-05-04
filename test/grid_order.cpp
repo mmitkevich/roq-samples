@@ -5,55 +5,102 @@
 #include <iostream>
 #include "roq/shared/grid_order.h"
 #include "roq/format.h"
+#include "roq/shared/quote.h"
 #include "roq/utils/compare.h"
 #include "roq/shared/grid_order.inl"
+#include "absl/container/flat_hash_map.h"
+#include "absl/container/btree_map.h"
+
 using namespace roq;
 using namespace roq::utils;
 
 struct MockStrategy {
-  order_txid_t create_order(order_txid_t id, const Order& order) {
-      create_count++;
-      fmt::print(stderr, "create_order ( id: {} {}, price: {}, side: {} )\n"
-        , id.order_id, id.client_order_id, order.price(), order.side());
-      return id;
+  using Self = MockStrategy;
+
+  template<class... ArgsT>
+  void update_order(Side side, roq::OrderUpdate&& update) {
+    if(side==Side::BUY)
+      bid.order_updated(std::move(update));
+    else if(side==Side::SELL)
+      ask.order_updated(std::move(update));
+    else assert(false);
   }
 
-  order_txid_t cancel_order(order_txid_t id) {
-      cancel_count++;
-      fmt::print(stderr, "cancel_order ( id: {} {} )\n"
-        , id.order_id, id.client_order_id);
-      return id;
+  template<int dir>
+  auto& get_order();
+    
+  order_txid_t create_order(order_txid_t id, const LimitOrder& order) {
+    create_count++;
+    log::info("MockStrategy::create_order ( order_id: {}, routing_id: {}, side: {}, price: {}, qty: {}, flags: {} )"_fmt
+      , id.order_id, id.routing_id_, order.side(), order.price(), order.quantity(), order.flags);
+    update_order(order.side(), roq::OrderUpdate {
+      .order_id = id.order_id,
+      .status = OrderStatus::WORKING,  
+      .remaining_quantity = order.quantity(),
+      .routing_id = id.routing_id(),      
+    });        
+    return id;
+  }
+
+  order_txid_t cancel_order(order_txid_t id, const LimitOrder& order) {
+    cancel_count++;
+    log::info("MockStrategy::cancel_order ( order_id: {}, routing_id: {}, side: {}, price: {}, qty: {}, flags: {}  )\n"_fmt
+      , id.order_id, id.routing_id_, order.side(), order.price(), order.quantity(), order.flags);
+    update_order(order.side(), roq::OrderUpdate {
+      .order_id = id.order_id,
+      .status = OrderStatus::CANCELED,  
+      .remaining_quantity = order.quantity(),
+      .routing_id = id.routing_id()      
+    });         
+    return id;
   }
 
   //! returns new client order id
-  order_txid_t modify_order(order_txid_t id, const Order& order) {
-      modify_count++;
-      fmt::print(stderr, "modify_order ( id: {} {}, price: {}, side: {}, flags: {} )\n"
-        , id.order_id, id.client_order_id, order.price(), order.side(), order.flags);      
-      return id;
+  order_txid_t modify_order(order_txid_t id, const LimitOrder& order) {
+    modify_count++;
+    log::info("MockStrategy::modify_order ( order_id: {}, routing_id: {}, side: {}, price: {}, qty: {}, prev_routing_id:{}, flags: {} )\n"_fmt
+      , id.order_id, id.routing_id_, order.side(), order.price(), order.quantity(), order.prev_routing_id, order.flags);      
+    update_order(order.side(), roq::OrderUpdate {
+      .order_id = id.order_id,
+      .status = OrderStatus::WORKING,  
+      .remaining_quantity = order.quantity(),
+      .routing_id = id.routing_id()
+    });      
+    return id;
   }
 
   // new order, new tx
   order_txid_t next_order_txid() { 
-    ++txid_.order_id;
-    ++txid_.client_order_id;
-    return txid_; 
+    ++next_txid_.order_id;
+    ++next_txid_.routing_id_;
+    return next_txid_; 
   }
   
   // same order, new tx
   order_txid_t next_order_txid(order_id_t id) { 
-    order_txid_t txid {id, ++txid_.client_order_id};
+    order_txid_t txid {id, ++next_txid_.routing_id_};
     return txid; 
   }
 
-  order_txid_t txid_ {};
+  order_txid_t next_txid_;
+  
+  constexpr static price_t s_tick_size = 1.0;
+
+  GridOrder<Self, 1> bid{this, s_tick_size};
+  GridOrder<Self, -1> ask{this, s_tick_size};
+
   int create_count = 0;
   int modify_count = 0;
   int cancel_count = 0;
   int total_count() { return create_count+modify_count+cancel_count; }
 };
 
-TEST(levels, case_insensitive) {
+template<> 
+auto& MockStrategy::get_order<1>() { return bid;}
+template<> 
+auto& MockStrategy::get_order<-1>() { return ask;}
+
+TEST(grid_order, levels_container) {
   Levels<Level, 1> levels (1.0);
   std::array<price_t, 3> prices = {101., 100., 99.};
   
@@ -88,6 +135,7 @@ TEST(levels, case_insensitive) {
     EXPECT_EQ(level.price, prices[i]);
     i++;
   }
+  EXPECT_EQ(i,3);
 
   levels.erase(100.);
   EXPECT_TRUE(levels[100.].empty());
@@ -105,37 +153,134 @@ TEST(levels, case_insensitive) {
   levels.erase(99.);
   EXPECT_EQ(levels.size(), 0);
   EXPECT_TRUE(levels.empty());
+
 }
 
-template<class GridOrder, class MockStrategy, class Fn>
-void update_order(GridOrder& order, MockStrategy& mock, Fn&&fn) {
-  roq::OrderUpdate update {
-      .order_id = mock.txid_.order_id,
-      .routing_id = mock.txid_.routing_id()
-  };
-  fn(update);
-  order.order_updated(update);
+template<class GridOrder>
+bool grid_equals(GridOrder& grid, std::map<price_t, volume_t>&& expected) {
+  bool ret = true;
+  for(auto& [id, order]: grid.orders()) {
+    assert(!order.is_pending());
+    assert(!order.is_pending_cancel());
+    assert(!order.empty());
+    expected[order.price()] -= order.quantity();
+  }
+  for(auto it =  expected.begin(); it!=expected.end();) {
+    auto [price, qty] = *it;
+    EXPECT_EQ(qty, 0.);
+    ret = ret && utils::compare(qty,0)==0;
+    if(utils::compare(qty,0)==0) {
+      it = expected.erase(it);
+    } else {
+      it++;
+    }
+  }
+  EXPECT_TRUE(ret = ret && expected.empty());
+  for(auto& e: expected) {
+    log::info("unexpected price:{}, qty:{}"_fmt, e.first, e.second);
+  }
+  return ret;
 }
 
-TEST(grid_order, case_insensitive) {
-    MockStrategy mock;
-    GridOrder<MockStrategy,  1> order {&mock};
-    order.set_tick_size(1.);
-    auto quotes = SingleQuote(Quote {100., 10.});
-    order.modify(quotes);
-    order.execute();
-    EXPECT_EQ(mock.create_count, 1);
-    EXPECT_EQ(mock.total_count(), 1);
-    
-    update_order(order, mock, [](auto& u) { u.status = OrderStatus::WORKING; });
-
+TEST(grid_order, one_bid_move_down) {
+    MockStrategy s;
+    auto quotes = make_quotes<1>({Quote {.price = 100., .quantity = 10.}});
+    s.bid.modify(quotes);
+    s.bid.execute();
+    EXPECT_EQ(s.create_count, 1);
+    EXPECT_EQ(s.total_count(), 1);
+    EXPECT_TRUE(grid_equals(s.bid, {{100.,10.}}));
     quotes.set_price(99.);
-    order.modify(quotes);
-    order.execute();
-    EXPECT_EQ(mock.modify_count, 1);
-    EXPECT_EQ(mock.total_count(), 2);
+    s.bid.modify(quotes);
+    s.bid.execute();
+    EXPECT_EQ(s.modify_count, 1);
+    EXPECT_EQ(s.total_count(), 2);
+    EXPECT_TRUE(grid_equals(s.bid, {{99.,10.}}));
+}
 
-    update_order(order, mock, [](auto& u) { u.status = OrderStatus::WORKING; });
+TEST(grid_order, one_bid_move_up) {
+    MockStrategy s;
+    auto quotes = make_quotes<1>({Quote {.price = 100., .quantity = 10.}});
+    s.bid.modify(quotes);
+    s.bid.execute();
+    EXPECT_EQ(s.create_count, 1);
+    EXPECT_EQ(s.total_count(), 1);
+    EXPECT_TRUE(grid_equals(s.bid, {{100.,10.}}));
+
+    quotes.set_price(101.);
+    s.bid.modify(quotes);
+    s.bid.execute();
+    EXPECT_EQ(s.modify_count, 1);
+    EXPECT_EQ(s.total_count(), 2);
+    EXPECT_TRUE(grid_equals(s.bid, {{101.,10.}}));
+}
+
+TEST(grid_order, one_ask_move_up) {
+    MockStrategy s;
+    auto quotes = make_quotes<1>({Quote {.price = 100., .quantity = 10.}});
+    s.ask.modify(quotes);
+    s.ask.execute();
+    EXPECT_EQ(s.create_count, 1);
+    EXPECT_EQ(s.total_count(), 1);
+    EXPECT_TRUE(grid_equals(s.ask, {{100.,10.}}));
+    quotes.set_price(101.);
+    s.ask.modify(quotes);
+    s.ask.execute();
+    EXPECT_EQ(s.modify_count, 1);
+    EXPECT_EQ(s.total_count(), 2);
+    EXPECT_TRUE(grid_equals(s.ask, {{101.,10.}}));
+}
+
+TEST(grid_order, one_ask_move_down) {
+    MockStrategy s;
+    auto quotes = make_quotes<1>({Quote {.price = 100., .quantity = 10.}});
+    s.ask.modify(quotes);
+    s.ask.execute();
+    EXPECT_EQ(s.create_count, 1);
+    EXPECT_EQ(s.total_count(), 1);
+    EXPECT_TRUE(grid_equals(s.ask, {{100.,10.}}));
+    quotes.set_price(99.);
+    s.ask.modify(quotes);
+    s.ask.execute();
+    EXPECT_EQ(s.modify_count, 1);
+    EXPECT_EQ(s.total_count(), 2);
+    EXPECT_TRUE(grid_equals(s.ask, {{99.,10.}}));
+}
+
+TEST(grid_order, three_bids_move_down) {
+    MockStrategy s;
     
-    order.execute();
+    auto quotes = GridQuotes{.quote={.side = Side::BUY, .price = 100., .quantity = 9}, .tick = {.price=1., .quantity=3.}};
+    s.bid.modify(quotes);
+    s.bid.execute();
+    log::info("bids: {}"_fmt, s.bid);
+    EXPECT_EQ(s.create_count, 3);
+    EXPECT_EQ(s.total_count(), 3);
+    EXPECT_TRUE(grid_equals(s.bid, {{100.,3.},{99.,3.},{98.,3.}}));
+    quotes.set_price(99.);
+    s.bid.modify(quotes);
+    s.bid.execute();
+    log::info("bids: {}"_fmt, s.bid);
+    EXPECT_EQ(s.modify_count, 1);
+    EXPECT_EQ(s.total_count(), 4);
+    EXPECT_TRUE(grid_equals(s.bid, {{99.,3.},{98.,3.},{97.,3.}}));
+}
+
+TEST(grid_order, three_asks_move_away) {
+    MockStrategy s;
+    
+    auto quotes = GridQuotes{.quote={.side = Side::BUY, .price = 100., .quantity = 9}, .tick = {.price=1., .quantity=3.}};
+    s.ask.modify(quotes);
+    s.ask.execute();
+    log::info("asks: {}"_fmt, s.ask);
+    EXPECT_EQ(s.create_count, 3);
+    EXPECT_EQ(s.total_count(), 3);
+    EXPECT_TRUE(grid_equals(s.ask, {{100.,3.},{99.,3.},{98.,3.}}));
+    quotes.set_price(50.);
+    s.ask.modify(quotes);
+    s.ask.execute();
+    log::info("asks: {}"_fmt, s.ask);
+    EXPECT_EQ(s.modify_count, 3);
+    EXPECT_EQ(s.total_count(), 6);
+    EXPECT_TRUE(grid_equals(s.ask, {{50.,3.},{49.,3.},{48.,3.}}));
 }

@@ -1,6 +1,7 @@
 /* Copyright (c) 2017-2021, Hans Erik Thrane */
 #include <limits>
 
+#include "roq/shared/order.h"
 #include "roq/utils/common.h"
 #include "roq/utils/update.h"
 
@@ -110,8 +111,8 @@ void Strategy::update() {
       Quote bid = model_.bid();
       Quote ask = model_.ask();
       if(validate_quotes(bid, ask)) {
-        bid_.modify(SingleQuote{model_.bid()});
-        ask_.modify(SingleQuote{model_.ask()});
+        bid_.modify(make_quotes<1>({model_.bid()}));
+        ask_.modify(make_quotes<1>({model_.ask()}));
       } else {
         bid_.reset();
         ask_.reset();
@@ -144,7 +145,7 @@ bool Strategy::validate_order(const ValidateOrder& order) {
   return true;
 }
 
-order_txid_t Strategy::create_order(order_txid_t id, const Order& order) {
+order_txid_t Strategy::create_order(order_txid_t id, const LimitOrder& order) {
   if (!Flags::enable_trading()) {
     log::warn("Trading *NOT* enabled"_sv);
     return {};
@@ -174,7 +175,7 @@ order_txid_t Strategy::create_order(order_txid_t id, const Order& order) {
   return id;
 }
 
-order_txid_t Strategy::cancel_order(order_txid_t id) {
+order_txid_t Strategy::cancel_order(order_txid_t id, const LimitOrder& order) {
   if (!Flags::enable_trading()) {
     log::warn("Trading *NOT* enabled"_sv);
     return {};
@@ -189,7 +190,7 @@ order_txid_t Strategy::cancel_order(order_txid_t id) {
   return id;
 }
 
-order_txid_t Strategy::modify_order(order_txid_t id, const Order& order) {
+order_txid_t Strategy::modify_order(order_txid_t id, const LimitOrder& order) {
   if (!Flags::enable_trading()) {
     log::warn("Trading *NOT* enabled"_sv);
     return {};

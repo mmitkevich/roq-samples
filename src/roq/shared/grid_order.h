@@ -5,6 +5,7 @@
 #include <roq/utils/compare.h>
 #include <algorithm>
 #include <cmath>
+#include <vector>
 #include "roq/shared/order.h"
 #include "roq/shared/price.h"
 #include "roq/shared/levels.h"
@@ -13,15 +14,6 @@
 
 namespace roq {
 inline namespace shared {
-
-
-inline int to_dir(Side side) {
-  switch(side) {
-    case Side::BUY: return 1;
-    case Side::SELL: return -1;
-    default: assert(false); return 0;
-  }
-}
 
 
 //! GridOrder moves a grid of orders
@@ -44,28 +36,55 @@ struct GridOrder {
     levels_.set_tick_size(val);
   }
   
+  const auto& levels() { return levels_; }
+  const auto& orders() { return orders_;}
+
   void reset();
 
   void execute();
 
   void order_updated(const OrderUpdate& update);
 
+  template<class Out>
+  void dump(Out& out);
 protected:
-  void order_canceled(order_txid_t order_id, Order& order, const OrderUpdate& order_update);
-  void order_rejected(order_txid_t order_id, Order& order, const OrderUpdate& order_update);
-  void order_completed(order_txid_t order_id, Order& order, const OrderUpdate& order_update);
-  void order_working(order_txid_t order_id, Order& order, const OrderUpdate& order_update);
+  void order_canceled(order_txid_t id, LimitOrder& order, const OrderUpdate& order_update);
+  void order_rejected(order_txid_t id, LimitOrder& order, const OrderUpdate& order_update);
+  void order_completed(order_txid_t id, LimitOrder& order, const OrderUpdate& order_update);
+  void order_working(order_txid_t id, LimitOrder& order, const OrderUpdate& order_update);
 private:
   Self* self() { return self_; }
-  order_txid_t create_order(const Order& order);
-  order_txid_t cancel_order(order_txid_t order_id);
-  order_txid_t modify_order(order_txid_t order_id,  const Order& new_order);
+  order_txid_t create_order(order_txid_t id, const LimitOrder& order);
+  order_txid_t cancel_order(order_txid_t id);
+  order_txid_t modify_order(order_txid_t id, const LimitOrder& new_order);
 
 private:
   Self* self_{};
   Levels<Level, DIR> levels_;       //!< sorted array of price levels
-  absl::flat_hash_map<order_txid_t, Order> orders_;        //!< queue of orders (working, pending, canceling, moving)
+  absl::flat_hash_map<order_txid_t, LimitOrder> orders_;        //!< queue of orders (working, pending, canceling, moving)
+  std::deque<std::pair<order_txid_t, LimitOrder>> pending_orders_; //! buffer for additional pending orders (due to hashmap limitations)
+  friend class fmt::formatter<roq::shared::GridOrder<Self, DIR>>;
 };
 
 } // namespace shared
 } // namespace roq
+
+
+template <class Self, int DIR>
+struct fmt::formatter<roq::shared::GridOrder<Self, DIR>> : public roq::formatter {
+  template <typename Context>
+  auto format(const roq::shared::GridOrder<Self, DIR> &value, Context &context) {
+    using namespace roq::literals;
+    auto out = context.out();
+    roq::format_to(out, "orders#{}:[\n"_fmt, value.orders_.size());
+    for(auto& [id, order]: value.orders_) {
+      roq::format_to(out, " {{order_id: {}, routing_id: {}, {}}},\n"_fmt, id.order_id, id.routing_id_, order);
+    }
+    roq::format_to(out, "], levels#{}:[\n"_fmt, value.levels_.size());
+    for(auto const& level: value.levels_) {
+      roq::format_to(out, " {{{}}},\n"_fmt, level);
+    }
+    roq::format_to(out, "]"_sv);
+    return out;
+  }
+};

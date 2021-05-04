@@ -1,6 +1,8 @@
 #pragma once
 #include <cstdint>
 #include <deque>
+#include <sstream>
+#include <string>
 #include <string_view>
 #include <charconv>
 
@@ -9,6 +11,7 @@
 #include "roq/shared/price.h"
 #include "roq/shared/quote.h"
 #include "roq/shared/type_traits.h"
+#include "roq/format.h"
 
 namespace roq {
 inline namespace shared {
@@ -21,29 +24,29 @@ using routing_id_t = uint64_t;
 //! Order transaction id (NEW,MODIFY,CANCEL)
 struct order_txid_t {
     order_id_t order_id  = undefined_order_id;    //! 1:1 to exchange_order_id    
-    order_id_t client_order_id = undefined_order_id;   //! ClOrdId
+    order_id_t routing_id_ = undefined_order_id;   //! ClOrdId
 
     order_txid_t() = default;
     
-    order_txid_t(order_id_t order_id, order_id_t client_order_id)
+    order_txid_t(order_id_t order_id, order_id_t routing_id)
     : order_id(order_id)
-    , client_order_id(client_order_id) {}
+    , routing_id_(routing_id) {}
     
     order_txid_t(order_id_t order_id, std::string_view routing_id) {
       this->order_id = order_id;
-      this->client_order_id = undefined_order_id;
-      assert(routing_id.size()==sizeof(client_order_id));
-      std::memcpy(&this->client_order_id, routing_id.data(), std::min(sizeof(client_order_id), routing_id.size()));
+      this->routing_id_ = undefined_order_id;
+      assert(routing_id.size()==sizeof(routing_id_));
+      std::memcpy(&this->routing_id_, routing_id.data(), std::min(sizeof(routing_id_), routing_id.size()));
     }
 
-    std::string_view routing_id() const { return std::string_view((const char*)&client_order_id, sizeof(client_order_id)); };
+    std::string_view routing_id() const { return std::string_view((const char*)&routing_id_, sizeof(routing_id_)); };
 
     friend bool operator==(const order_txid_t& lhs, const order_txid_t& rhs) {
-      return lhs.client_order_id == rhs.client_order_id && lhs.order_id==rhs.order_id;
+      return lhs.routing_id_ == rhs.routing_id_ && lhs.order_id==rhs.order_id;
     }
 };
 
-struct Order {
+struct LimitOrder {
   enum flags_t : uint32_t {
     EMPTY          = 0,
     WORKING        = 1,
@@ -53,8 +56,8 @@ struct Order {
     PRICE          = 16,
     QUANTITY       = 32
   };
-  Order() = default;
-  Order(Quote quote, uint32_t flags=EMPTY)
+  LimitOrder() = default;
+  LimitOrder(Quote quote, flags_t flags=EMPTY)
   : quote(quote)
   , flags(flags) {}
 
@@ -70,26 +73,73 @@ struct Order {
   bool is_pending() const { return flags & (PENDING_NEW|PENDING_MODIFY); }
   bool is_pending_cancel() const { return flags & PENDING_CANCEL; }
   bool is_working() const { return flags & WORKING; }
-  Order& tail_order() { Order* tail = this; while(tail->next_order) tail=tail->next_order; return *tail; }
+  LimitOrder& tail_order() { LimitOrder* tail = this; while(tail->next_order) tail=tail->next_order; return *tail; }
   
   auto price() const { return quote.price; }
   auto quantity() const { return quote.quantity; }
   auto side() const { return quote.side; }
 
+  void flags_set(uint32_t flag) {
+    flags = flags_t(flags | flag);
+  }
+  void flags_reset(uint32_t flag) {
+    flags = flags_t(flags & ~flag);
+  }
+  uint32_t flags_test(uint32_t mask) {
+    return flags & mask;
+  }
+
   Quote quote {};
-  uint32_t flags {};
+  flags_t flags {};
   volume_t est_volume_before = 0.;  // estimated volume before this order in the level
-  Order* next_order {}; //! next order in the level
+  LimitOrder* next_order {}; //! next order in the level
+  order_id_t prev_routing_id {undefined_order_id}; //! for pending modify store previous routing_id
 };
 
 } // namespace shared
 } // namespace roq
 
+#define ROQ_FLAGS_PRINT(os, flags, clazz, mask) if(flags & clazz::mask) os << "+" #mask;
+
 namespace std {
 template<>
 struct hash<roq::order_txid_t> {
   std::size_t operator()(const roq::shared::order_txid_t& txid) {
-    return txid.order_id | (static_cast<std::size_t>(txid.client_order_id)<<(8*sizeof(txid.client_order_id)));
+    return txid.order_id | (static_cast<std::size_t>(txid.routing_id_)<<(8*sizeof(txid.order_id)));
   }
 };
 }
+
+template <>
+struct fmt::formatter<roq::shared::LimitOrder> : public roq::formatter {
+  template <typename Context>
+  auto format(const roq::shared::LimitOrder &order, Context &context) {
+    using namespace roq::literals;
+    return roq::format_to(context.out(), "side: {}, price: {}, quantity: {}, flags: {}, prev_routing_id: {}"_fmt,
+      order.side(), order.price(), order.quantity(), order.flags, order.prev_routing_id);
+  }
+};
+
+template <>
+struct fmt::formatter<roq::order_txid_t> : public roq::formatter {
+  template <typename Context>
+  auto format(const roq::order_txid_t &value, Context &context) {
+    using namespace roq::literals;
+    return roq::format_to(context.out(), "order_id:{}, routing_id:{}"_fmt, value.order_id, value.routing_id_);
+  }
+};
+
+
+template <>
+struct fmt::formatter<roq::shared::LimitOrder::flags_t> : public roq::formatter {
+  template <typename Context>
+  auto format(const roq::shared::LimitOrder::flags_t &value, Context &context) {
+    using namespace roq::literals;
+    std::ostringstream os;
+    ROQ_FLAGS_PRINT(os, value, roq::shared::LimitOrder, PENDING_NEW);
+    ROQ_FLAGS_PRINT(os, value, roq::shared::LimitOrder, PENDING_MODIFY);
+    ROQ_FLAGS_PRINT(os, value, roq::shared::LimitOrder, PENDING_CANCEL);
+    ROQ_FLAGS_PRINT(os, value, roq::shared::LimitOrder, WORKING);
+    return roq::format_to(context.out(), "{}"_fmt, os.str());
+  }
+};

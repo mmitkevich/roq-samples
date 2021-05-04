@@ -2,14 +2,22 @@
 
 #include "grid_order.h"
 #include "roq/shared/order.h"
+#include "roq/logging.h"
 
 namespace roq {
 namespace shared {
 
+using namespace roq::literals;
+
 template<class Self, int DIR>
 template<class Quotes>
 void GridOrder<Self, DIR>::modify(const Quotes& quotes) {
-  for(std::size_t i=0; i<quotes.size(); i++) {
+  log::trace_1("GridOrder<{}>::modify quotes {}"_fmt, quotes);
+  for(auto& level: levels_) {
+    level.desired_volume = 0.;
+  }
+  std::size_t sze = quotes.size();
+  for(std::size_t i=0; i<sze; i++) {
     auto quote = quotes[i];
     levels_[quote.price].desired_volume = quote.quantity;
   }
@@ -21,6 +29,7 @@ void GridOrder<Self, DIR>::reset() {
     level.desired_volume = 0;
   }
 }
+
 
 template<class Self, int DIR>
 void GridOrder<Self, DIR>::execute() {
@@ -37,120 +46,194 @@ void GridOrder<Self, DIR>::execute() {
     int cmp_volume = utils::compare(level.expected_volume(), level.desired_volume);
     if(cmp_volume>0) {
       // some extra volume - try move first
-      for(auto const& dest_level: levels_) {
+      for(auto & dest_level: levels_) {
         if(utils::compare(dest_level.expected_volume() + order.quantity(), dest_level.desired_volume)<=0) {
-          modify_order(txid, Order(Quote {
+          dest_level.pending_volume += order.quantity();
+          level.canceling_volume += order.quantity();
+          pending_orders_.emplace_back(txid, LimitOrder(Quote {
             .side = side(),
             .price = dest_level.price,
             .quantity = order.quantity()
-          }));
+          }, LimitOrder::PENDING_MODIFY));
           goto next_;
         }
       }
       // failed to move, so cancel
+      level.canceling_volume += order.quantity();
       cancel_order(txid);
     }
     next_:;
   }
   // second pass: add more orders if needed
-  for(auto& level: levels_) {
+  for(auto it = std::begin(levels_); it!= std::end(levels_); it++) {
+    auto& level = *it;
     int cmp_volume = utils::compare(level.expected_volume(), level.desired_volume);
     if(cmp_volume<0) {
+      auto qty = level.desired_volume - level.expected_volume();
+      level.pending_volume += qty;
       // add order to the level
-      create_order( Order(Quote {
+      pending_orders_.emplace_back(self()->next_order_txid(), LimitOrder(Quote {
           .side = side(),
           .price = level.price,
-          .quantity = level.desired_volume - level.expected_volume()
-      }));
+          .quantity = qty
+      }, LimitOrder::PENDING_NEW));
     }
+  }
+  // flush the queue
+  while(!pending_orders_.empty()) {
+    auto& [txid, order] = pending_orders_.front();
+    if(order.flags_test(LimitOrder::PENDING_MODIFY)) {
+      modify_order(txid, order);
+    } else {
+      create_order(txid, order);
+    }
+    pending_orders_.pop_front();
   }
 }
 
 // +PENDING_NEW
 template<class Self, int DIR>
-order_txid_t GridOrder<Self, DIR>::create_order(const Order& new_order) {
-  auto& level = levels_[new_order.price()];
-  level.pending_volume += new_order.quantity();
-  auto txid = self()->next_order_txid();
-  return self()->create_order(txid, orders_[txid] = Order (Quote {
+order_txid_t GridOrder<Self, DIR>::create_order(order_txid_t id, const LimitOrder& new_order) {
+  //auto& level = levels_[new_order.price()];
+  //level.pending_volume += new_order.quantity();
+  auto& order = orders_[id] = LimitOrder (Quote {
     .side = side(),
-    .quantity = new_order.quantity(),
-    .price = new_order.price(),
-  }, Order::PENDING_NEW));
+    .price = new_order.price(),    
+    .quantity = new_order.quantity()
+  }, LimitOrder::PENDING_NEW);
+  log::trace_1("GridOrder<{}>::create_order: order_id:{}, routing_id:{}, order: {{{}}}"_fmt,
+   side(), id.order_id, id.routing_id_, order, *this);
+  log::trace_2("GridOrder<{}>: {}"_fmt, side(), *this);
+  auto ret = self()->create_order(id, order);
+  return ret;
 }
 
 // WORKING|PENDING_NEW|PENDING_MODIFY -> PENDING_CANCEL
 template<class Self, int DIR>
-order_txid_t GridOrder<Self, DIR>::cancel_order(order_txid_t txid) {
-  auto& order = orders_[txid];
-  auto& level = levels_[order.price()];
-  level.canceling_volume += order.quantity();
-  order.flags|=Order::PENDING_CANCEL;
-  return self()->cancel_order(txid);
+order_txid_t GridOrder<Self, DIR>::cancel_order(order_txid_t id) {
+  auto& order = orders_[id];
+  //auto& level = levels_[order.price()];
+  //level.canceling_volume += order.quantity();
+  order.flags_set(LimitOrder::PENDING_CANCEL);
+  log::trace_1("GridOrder<{}>::cancel_order: order_id:{}, routing_id:{}, order:{{{}}}"_fmt, side(),id.order_id, id.routing_id_, order);
+  log::trace_2("GridOrder<{}>:{}"_fmt, side(), *this);  
+  auto ret = self()->cancel_order(id, order);
+  return ret;
 } 
 
 // WORKING|PENDING_NEW|PENDING_MODIFY -> PENDING_CANCEL; +PENDING_MODIFY
 template<class Self, int DIR>
-order_txid_t GridOrder<Self, DIR>::modify_order(order_txid_t txid, const Order& new_order) {
-  auto& order = orders_[txid];
-  auto& level = levels_[order.price()];
-  level.canceling_volume += order.quantity();
-  order.flags |= Order::PENDING_CANCEL;
+order_txid_t GridOrder<Self, DIR>::modify_order(order_txid_t id, const  LimitOrder& new_order) {
+  auto& order = orders_[id];
+  //auto& level = levels_[order.price()];
+  //level.canceling_volume += order.quantity();
+  order.flags_set(LimitOrder::PENDING_CANCEL);
   auto& new_level = levels_[new_order.price()];
-  new_level.pending_volume += new_order.quantity();
-  auto new_txid = self()->next_order_txid(txid.order_id);
-  return self()->modify_order(new_txid, orders_[new_txid] = Order ( new_order.quote, Order::PENDING_MODIFY));
+  //new_level.pending_volume += new_order.quantity();
+  auto new_id = self()->next_order_txid(id.order_id);
+  auto& modified_order = orders_[new_id] = LimitOrder ( new_order.quote, LimitOrder::PENDING_MODIFY);
+  modified_order.prev_routing_id = id.routing_id_;
+  log::trace_1("GridOrder<{}>::modify_order: order_id:{}, routing_id:{}, prev_routing_id:{}, new_order:{{{}}}, prev_order:{{{}}}"_fmt,
+    side(), new_id.order_id, new_id.routing_id_,  id.routing_id_,  modified_order, order);
+  log::trace_2("GridOrder<{}>:{}"_fmt, side(), *this);
+  auto ret = self()->modify_order(new_id, modified_order);
+  return ret;
 }
 
 template<class Self, int DIR>
-void GridOrder<Self, DIR>::order_rejected(order_txid_t order_id, Order& order, const OrderUpdate& order_update) {
+void GridOrder<Self, DIR>::order_rejected(order_txid_t id, LimitOrder& order, const OrderUpdate& order_update) {
   auto& level = levels_[order.price()];
-  if(order.flags&Order::PENDING_CANCEL) {
+  if(order.flags&LimitOrder::PENDING_CANCEL) {
     level.canceling_volume -= order.quantity();
   }
-  if(order.flags&Order::PENDING_MODIFY) {
+  if(order.flags&LimitOrder::PENDING_MODIFY) {
     level.pending_volume -= order.quantity();
   }
-  if(order.flags&Order::PENDING_NEW) {
+  if(order.flags&LimitOrder::PENDING_NEW) {
     level.pending_volume -= order.quantity();
   }
-  order.flags = Order::EMPTY;
+  order.flags = LimitOrder::EMPTY;
+  log::trace_1("GridOrder<{}>::order_rejected: {}"_fmt, side(), *this);
 }
 
 template<class Self, int DIR>
-void GridOrder<Self,DIR>::order_canceled(order_txid_t order_id, Order& order, const OrderUpdate& order_update) {
-  assert(order.flags & Order::PENDING_CANCEL);
+void GridOrder<Self,DIR>::order_canceled(order_txid_t id, LimitOrder& order, const OrderUpdate& order_update) {
+  assert(order.flags & LimitOrder::PENDING_CANCEL);
   auto& level = levels_[order.price()];
-  if(order.flags&Order::PENDING_CANCEL) {
+  if(order.flags&LimitOrder::PENDING_CANCEL) {
     level.canceling_volume -= order.quantity();
     level.working_volume -= order_update.remaining_quantity;
+  } else {
+    assert(false);
   }
-  order.flags = Order::EMPTY;
+  order.flags = LimitOrder::EMPTY;
+
+  log::trace_1("GridOrder<{}>::order_canceled: order_id:{}, routing_id:{}, order:{}"_fmt, side(), id.order_id, id.routing_id_, order);
+  log::trace_2("GridOrder<{}>:{}"_fmt, side(), *this);
 }
 
 template<class Self, int DIR>
-void GridOrder<Self,DIR>::order_completed(order_txid_t order_id, Order& order, const OrderUpdate& order_update) {
-  assert(order.flags & Order::WORKING);
+void GridOrder<Self,DIR>::order_completed(order_txid_t id, LimitOrder& order, const OrderUpdate& order_update) {
   auto& level = levels_[order.price()];
-  if(order.flags&Order::WORKING) {
+  assert(order.flags_test(LimitOrder::WORKING));  
+  if(order.flags_test(LimitOrder::WORKING)) {
+    order.flags_set(LimitOrder::WORKING);
     level.working_volume -= order_update.remaining_quantity;
   }
-  order.flags = Order::EMPTY;
+  order.flags = LimitOrder::EMPTY;
+  log::trace_1("GridOrder<{}>::order_completed: {}"_fmt, side(), order);
+  log::trace_2("GridOrder<{}>:{}"_fmt,side(), *this);
 }
 
 template<class Self, int DIR>
-void GridOrder<Self,DIR>::order_working(order_txid_t order_id, Order& order, const OrderUpdate& order_update) {
+void GridOrder<Self,DIR>::order_working(order_txid_t id, LimitOrder& order, const OrderUpdate& order_update) {
   auto& level = levels_[order.price()];
-  order.flags |= Order::WORKING;
+  assert(order.flags_test(LimitOrder::PENDING_NEW|LimitOrder::PENDING_MODIFY));  
+  assert(!order.flags_test(LimitOrder::WORKING));  
+  if(order.flags_test(LimitOrder::PENDING_NEW)) {
+    order.flags_reset(LimitOrder::PENDING_NEW);
+    level.pending_volume -= order_update.remaining_quantity;
+    order.flags_set(LimitOrder::WORKING);  
+    level.working_volume += order_update.remaining_quantity;
+  }
+  if(order.flags_test(LimitOrder::PENDING_MODIFY)) {
+    order.flags_reset(LimitOrder::PENDING_MODIFY);
+    level.pending_volume -= order_update.remaining_quantity;
+    order.flags_set(LimitOrder::WORKING);  
+    level.working_volume += order_update.remaining_quantity;
+
+    assert(order.prev_routing_id!=undefined_order_id);
+    auto prev_id = order_txid_t(id.order_id, order.prev_routing_id);
+    assert(orders_.contains(prev_id));
+    auto& prev_order = orders_[prev_id];
+    auto& prev_level = levels_[prev_order.price()];
+    assert(prev_order.flags_test(LimitOrder::PENDING_CANCEL) && prev_order.flags_test(LimitOrder::WORKING));
+    prev_order.flags_reset(LimitOrder::PENDING_CANCEL|LimitOrder::WORKING);
+    prev_level.canceling_volume -= prev_order.quantity();
+    prev_level.working_volume -= prev_order.quantity();
+    assert(prev_order.flags == LimitOrder::EMPTY);
+    log::trace_1("GridOrder<{}>::erase_order order_id:{}, routing_id:{}"_fmt, 
+      side(), prev_id.order_id, prev_id.routing_id_);
+    orders_.erase(prev_id);
+    levels_.shrink();    
+  }
+  log::trace_1("GridOrder<{}>::order_working: {}"_fmt, side(), order);
+  log::trace_2("GridOrder<{}>:{}"_fmt, side(), *this);
 }
 
 template<class Self, int DIR>
 void GridOrder<Self, DIR>::order_updated(const OrderUpdate& order_update) {
   order_txid_t id {order_update.order_id, order_update.routing_id};
+  log::trace_1("GridOrder<{}>::order_updated: order_id: {}, routing_id: {}, order_update: {}"_fmt, side(), id.order_id, id.routing_id_, order_update);
+  log::trace_2("GridOrder<{}>:{}"_fmt, side(), *this);      
   auto it = orders_.find(id);
-  if(it==orders_.end())
+  if(it==orders_.end()) {
+    log::warn("GridOrder<{}>::order_updated: order_id: {}, routing_id:{}  not found"_fmt, side(), id.order_id, id.routing_id_);
     return;
-  auto& order = it->second;
+  }
+  
+  auto& order = it->second;  
+
   switch(order_update.status) {
     case OrderStatus::UNDEFINED:
       assert(false);
@@ -159,7 +242,6 @@ void GridOrder<Self, DIR>::order_updated(const OrderUpdate& order_update) {
       break;
     case OrderStatus::CANCELED:
       order_canceled(id, order, order_update);
-      orders_.erase(it);
       break;
     case OrderStatus::REJECTED:
       order_rejected(id, order, order_update);
@@ -170,7 +252,7 @@ void GridOrder<Self, DIR>::order_updated(const OrderUpdate& order_update) {
     case OrderStatus::SENT:
     case OrderStatus::PENDING:
     case OrderStatus::ACCEPTED:
-      assert(order.flags==Order::PENDING_NEW || order.flags==Order::PENDING_MODIFY);
+      assert(order.flags==LimitOrder::PENDING_NEW || order.flags==LimitOrder::PENDING_MODIFY);
       break;
   }
 }

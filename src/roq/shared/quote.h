@@ -2,6 +2,8 @@
 #pragma once
 #include <cstdint>
 #include <cmath>
+#include <initializer_list>
+#include <iterator>
 #include <limits>
 
 #include <roq/side.h>
@@ -14,25 +16,27 @@
 namespace roq {
 inline namespace shared {
 
+
+
+inline int to_dir(Side side) {
+  switch(side) {
+    case Side::BUY: return 1;
+    case Side::SELL: return -1;
+    default: assert(false); return 0;
+  }
+}
+
 //! Price and Volume
 struct Quote {
   Quote() = default;
-  Quote(Side side, price_t price, volume_t quantity = 0)
-  : side (side)
-  , price (price)
-  , quantity (quantity)
-  {}
-  Quote(price_t price, volume_t quantity = 0)
-  : side (Side::UNDEFINED)
-  , price (price)
-  , quantity (quantity)
-  {}
 
   void reset() {
     side = Side::UNDEFINED;
     price = undefined_price;
     quantity = 0.;
   }
+  void set_price(price_t val) { price = val; }
+  void set_quantity(volume_t val) { quantity = val; }
 
   bool empty() const { return is_undefined_price(price) || utils::compare(quantity, 0.) == 0; }
   
@@ -40,27 +44,97 @@ struct Quote {
     return utils::compare(lhs.price, rhs.price) == 0 && 
             utils::compare(lhs.quantity, rhs.quantity) == 0; 
   }
+
   Side side = Side::UNDEFINED;
   price_t price = undefined_price;  //!< limit price
   volume_t quantity {0.};    //!< total quantity
 };
 
-template<class Quote>
-struct SingleQuote {
-  SingleQuote(const Quote& quote): quote(quote) {}
-
-  price_t price() const { return quote.price; }
-  void set_price(price_t price) { quote.price = price; }
-  volume_t quantity() const { return quote.quantity; }
+struct GridQuotes {
+  std::size_t size() const { return std::ceil(quote.quantity/tick.quantity); }
+  
+  bool empty() const { return size()==0; }
+  price_t price() const { return quote.price;}
+  void set_price(price_t val) { quote.price = val; }
+  volume_t quantity() const { return quote.quantity;}
   void set_quantity(volume_t val) { quote.quantity = val; }
-
-  bool empty() const { return quote.empty(); }
-  std::size_t size() const { return quote.empty() ? 0 : 1;}
-  Quote& operator[](std::size_t index) { return quote; }
-  const Quote& operator[](std::size_t index) const { return quote; }
-
-  Quote quote;
+  Quote operator[](std::size_t i) const {
+    int dir = to_dir(quote.side);
+    price_t price_b = dir>0 ? std::floor(quote.price/tick.price)*tick.price : std::ceil(quote.price/tick.price)*tick.price;
+    price_b -= dir*i*tick.price;
+    auto result = Quote {
+      .side = quote.side,
+      .price = i==0 ? quote.price: price_b,
+      .quantity = i==0 ? quote.quantity - (size()-1)*tick.quantity : tick.quantity};
+    return result;
+  }
+  Quote quote {};
+  Quote tick = Quote {.price = INFINITY, .quantity=0};
 };
+///
+template<uint32_t MAX_SIZE>
+struct Quotes {
+  Quotes(std::initializer_list<Quote>&& vals) {
+    size_ = vals.size();
+    if(vals.size()<MAX_SIZE)
+      std::copy(vals.begin(),vals.end(), std::begin(data_));
+    else 
+      std::copy(vals.begin(),vals.begin()+MAX_SIZE, std::begin(data_));
+  }
+
+  price_t price() const {
+    if(empty())
+      return undefined_price;
+    else
+      return data_[0].price;
+  }
+  
+  volume_t quantity() const {
+    volume_t qty = 0;
+    for(auto& q:data_) {
+      qty += q.quantity;
+    }
+    return qty;
+  }
+  
+  void set_price(price_t price) {
+    if(!empty()) {
+      price_t diff = price - data_[0].price;
+      for(auto& quote: data_) {
+        quote.price += diff;
+      }
+    } else {
+      size_ = 1;
+      data_[0].price = price;
+    }
+  }
+  
+  void set_quantity(volume_t quantity) {
+    if(!empty()) {
+      volume_t diff = quantity - this->quantity();
+      for(std::size_t i=0; i<size_; i++) {
+        data_[i].quantity += diff;
+      }
+    } else {
+      size_=1;
+      data_[0].quantity = quantity;
+    }
+  }
+  bool empty() const { return data_.empty(); }
+  std::size_t size() const { return size_; }
+  Quote& operator[](std::size_t index) { return data_[index]; }
+  const Quote& operator[](std::size_t index) const { return data_[index]; }
+
+private:
+  std::size_t size_{};
+  std::array<Quote, MAX_SIZE> data_;
+};
+
+template<uint32_t MAX_SIZE>
+auto make_quotes(std::initializer_list<Quote>&& items) {
+  assert(items.size()<=MAX_SIZE);
+  return Quotes<MAX_SIZE>(std::move(items));
+}
 
 } // namespace shared
 } // namespace roq
@@ -72,5 +146,23 @@ struct fmt::formatter<roq::shared::Quote> : public roq::formatter {
   auto format(const roq::shared::Quote &value, Context &context) {
     using namespace roq::literals;
     return roq::format_to(context.out(), "{}:{}"_fmt, value.price, value.quantity);
+  }
+};
+
+template <uint32_t MAX_SIZE>
+struct fmt::formatter<roq::shared::Quotes<MAX_SIZE>> : public roq::formatter {
+  template <typename Context>
+  auto format(const roq::shared::Quotes<MAX_SIZE> &value, Context &context) {
+    using namespace roq::literals;
+    return roq::format_to(context.out(), "{}:{}"_fmt, value.price(), value.quantity());
+  }
+};
+
+template <>
+struct fmt::formatter<roq::shared::GridQuotes> : public roq::formatter {
+  template <typename Context>
+  auto format(const roq::shared::GridQuotes &value, Context &context) {
+    using namespace roq::literals;
+    return roq::format_to(context.out(), "{}:{}"_fmt, value.price(), value.quantity());
   }
 };

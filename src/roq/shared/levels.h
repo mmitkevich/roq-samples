@@ -47,22 +47,6 @@ struct Level {
 };
 
 
-template<class Iterator, class Fn>
-struct TransformedIterator {
-  
-  TransformedIterator(Iterator it, Fn&& fn):iterator_(it), fn_(fn) {}
-  auto operator*(){ return fn(*iterator_); }
-  auto operator++(){ iterator_++; return *this; }
-  auto operator--(){ iterator_--; return *this; }
-  auto operator->() { return fn(*iterator_); }
-
-  Iterator iterator_;
-  Fn fn_;
-};
-template<class Iterator, class Fn>
-auto transofm_iterator(Iterator iterator, Fn&&fn) {
-  return TransformedIterator<Iterator, Fn>(iterator, std::move(fn));
-}
 
 //! Sorted array of price levels. price should be proportional to step
 template<class T, int DIR>
@@ -74,6 +58,9 @@ struct Levels {
 
   auto begin() { return data_.begin(); }
   auto end() { return data_.end(); }
+
+  auto begin() const { return data_.begin(); }
+  auto end() const { return data_.end(); }
 
   T& nth(std::size_t index) {
     assert(index>=0);
@@ -96,10 +83,13 @@ struct Levels {
       top_price_ += DIR*tick_size_;
       data_.emplace_front(top_price_);
     }
-    price_t btm_price = top_price_ - DIR*data_.size() * tick_size_;
-    while(data_.size() <= index) {
+    ssize_t sze;
+    price_t btm_price;
+    for(sze=data_.size(), btm_price = top_price_ - DIR * sze * tick_size_;
+        sze <= index;
+        sze=data_.size(), btm_price-=DIR*tick_size_) 
+    {
       data_.emplace_back(btm_price);
-      btm_price -= DIR*tick_size_;
     }
     assert(index>=0 && index<data_.size());
     auto& result =  data_[index];
@@ -177,7 +167,16 @@ private:
   price_t tick_size_ = undefined_price;
   std::deque<T> data_;
 };
-
-
 } // namespace shared
 } // namespace roq
+
+
+template <>
+struct fmt::formatter<roq::shared::Level> : public roq::formatter {
+  template <typename Context>
+  auto format(const roq::shared::Level &value, Context &context) {
+    using namespace roq::literals;
+    return roq::format_to(context.out(), "price: {}, desired:{}, pending:{}, working:{}, canceling:{}"_fmt,
+      value.price, value.desired_volume, value.pending_volume, value.working_volume, value.canceling_volume);
+  }
+};
