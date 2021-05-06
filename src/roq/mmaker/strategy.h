@@ -2,19 +2,38 @@
 
 #pragma once
 
+#include <absl/container/flat_hash_map.h>
+#include <roq/client/config.h>
 #include "roq/client.h"
 
 #include "roq/shared/instrument.h"
 #include "roq/shared/grid_order.h"
 #include "model.h"
 #include "roq/shared/order.h"
+#include "roq/shared/vars.h"
 
 namespace roq {
 namespace mmaker {
 
+struct Strategy final : client::Handler {
+  using InstrumentId = uint32_t;
+  
+  struct Instrument : roq::Instrument {
+    template<class...ArgsT>
+    Instrument(Strategy* self, ArgsT...args)
+    : roq::Instrument(std::forward<ArgsT>(args)...)
+    , self_(self)
+    {}
+    Strategy* self() { return self_; }
+    
+    Instrument(Instrument&&) = default;
+    Instrument(const Instrument&) = delete;
+    bool is_ready() const;
+    PositionLimit<Instrument> limits {*this};
+  private:
+    Strategy* self_ {};
+  };
 
-class Strategy final : public client::Handler {
- public:
   explicit Strategy(client::Dispatcher &);
 
   Strategy(Strategy &&) = default;
@@ -28,8 +47,8 @@ class Strategy final : public client::Handler {
   order_txid_t cancel_order(order_txid_t id, const LimitOrder& order);
   order_txid_t modify_order(order_txid_t id, const LimitOrder& order);
 
-  order_txid_t next_order_txid() { return order_txid_t{++max_order_id_, ++max_client_order_id_}; }
-  order_txid_t next_order_txid(order_id_t order_id) { return order_txid_t{order_id, ++max_client_order_id_}; }
+  order_txid_t next_order_txid() { txid_.order_id++; txid_.routing_id_++; return txid_; }
+  order_txid_t next_order_txid(order_id_t order_id) { return order_txid_t{order_id, ++txid_.routing_id_}; }
 
  protected:
   void operator()(const Event<Timer> &) override;
@@ -48,26 +67,46 @@ class Strategy final : public client::Handler {
   void operator()(const Event<FundsUpdate> &) override;
 
   // helper - dispatch event to instrument
-  template <typename T>
-  void dispatch(const T &event) {
+  template<class Dest, typename T>
+  void notify(Dest& dest, const T &event) {
     assert(event.message_info.source == 0u);
-    instrument_(event.value);
+    dest(event.value);
+  }
+  template <typename T>
+  void dispatch(const T& event) {
+    for(auto& data: data_) {
+      notify(data, event);
+    }
   }
 
   bool validate_quotes(Quote& bid, Quote& ask);
 
-  void update();
-
+  template<class Quotes>
+  void modify(const Quotes& quotes) {
+    if(quotes.get_side()==Side::BUY) {
+      bid_.modify(quotes);
+    } else if(quotes.get_side()==Side::SELL) {
+      ask_.modify(quotes);
+    }
+  }
+  
+  Instrument& instrument(InstrumentId ins) {
+    if(ins>=instruments_.size())
+      instruments_.resize(ins+1);
+    assert(ins>=0);
+    assert(ins<instruments_.size());
+    return instruments_[ins];
+  }
  private:
   client::Dispatcher &dispatcher_;
-  Instrument instrument_;
-  PositionLimit<Instrument> limits_{instrument_};
+  std::vector<Instrument> instruments_;
+  absl::flat_hash_map<Symbol, InstrumentId> symbol_to_ins_;
+  shared::Variables vars_;
 
-  order_id_t max_order_id_ = 0;
-  order_id_t max_client_order_id_ = 0;
+  order_txid_t txid_;
 
   Model model_;
-  using Self = Strategy;
+
   GridOrder<Self,  1> bid_{this}; 
   GridOrder<Self, -1> ask_{this}; 
   std::chrono::nanoseconds next_sample_ = {};

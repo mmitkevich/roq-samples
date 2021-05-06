@@ -3,6 +3,7 @@
 #pragma once
 
 #include <array>
+#include <vector>
 
 #include "roq/api.h"
 
@@ -12,6 +13,9 @@
 namespace roq {
 namespace mmaker {
 
+// Model calculates quotes for single instrument
+// Model uses quotes from many instruments
+// Instruments 
 class Model final {
  public:
   static const constexpr size_t MAX_DEPTH = 3u;
@@ -23,22 +27,17 @@ class Model final {
   Model(Model &&) = default;
   Model(const Model &) = delete;
 
-  void reset() {
-      q_bid_.reset();
-      q_ask_.reset();
-  }
+  template<class Strategy>
+  void quotes_updated(Strategy& strat, const Instrument& ins);
 
-  //! @returns false if nothing has changed
-  bool update(const Instrument& ins);
-  
-  const Quote& bid() const { return q_bid_; }
-  const Quote& ask() const { return q_ask_; }
  protected:
   bool validate(const Instrument& ins);
  
  protected:
-  Quote q_bid_;
-  Quote q_ask_;
+  std::vector<Quote> bids;
+  std::vector<Quote> asks;
+  Quote quote_bid;
+  Quote quote_ask;
   price_t q_spread_ = NaN;
 };
 

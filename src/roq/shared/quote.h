@@ -35,9 +35,18 @@ struct Quote {
     price = undefined_price;
     quantity = 0.;
   }
+
+  Side get_side() const { return side; }
+
+  price_t get_price() const { return price; }
   void set_price(price_t val) { price = val; }
+
+  volume_t get_quantity() const { return quantity; }
   void set_quantity(volume_t val) { quantity = val; }
 
+  std::size_t size() const { return 1; }
+  Quote& operator[](std::size_t index) { return *this; }
+  
   bool empty() const { return is_undefined_price(price) || utils::compare(quantity, 0.) == 0; }
   
   friend inline bool operator==(const Quote& lhs, const Quote& rhs) { 
@@ -50,25 +59,22 @@ struct Quote {
   volume_t quantity {0.};    //!< total quantity
 };
 
-struct GridQuotes {
+struct GridQuotes : Quote {
   std::size_t size() const { return std::ceil(quote.quantity/tick.quantity); }
   
   bool empty() const { return size()==0; }
-  price_t price() const { return quote.price;}
-  void set_price(price_t val) { quote.price = val; }
-  volume_t quantity() const { return quote.quantity;}
-  void set_quantity(volume_t val) { quote.quantity = val; }
+
   Quote operator[](std::size_t i) const {
-    int dir = to_dir(quote.side);
-    price_t price_b = dir>0 ? std::floor(quote.price/tick.price)*tick.price : std::ceil(quote.price/tick.price)*tick.price;
+    int dir = to_dir(side);
+    price_t price_b = dir>0 ? std::floor(price/tick.price)*tick.price : std::ceil(price/tick.price)*tick.price;
     price_b -= dir*i*tick.price;
     auto result = Quote {
-      .side = quote.side,
-      .price = i==0 ? quote.price: price_b,
-      .quantity = i==0 ? quote.quantity - (size()-1)*tick.quantity : tick.quantity};
+      .side = side,
+      .price = i==0 ? price: price_b,
+      .quantity = i==0 ? quantity - (size()-1)*tick.quantity : tick.quantity};
     return result;
   }
-  Quote quote {};
+  
   Quote tick = Quote {.price = INFINITY, .quantity=0};
 };
 ///
@@ -134,6 +140,9 @@ template<uint32_t MAX_SIZE>
 auto make_quotes(std::initializer_list<Quote>&& items) {
   assert(items.size()<=MAX_SIZE);
   return Quotes<MAX_SIZE>(std::move(items));
+}
+auto make_empty_quotes() {
+  return Quotes<0>({});
 }
 
 } // namespace shared

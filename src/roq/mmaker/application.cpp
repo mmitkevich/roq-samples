@@ -10,7 +10,7 @@
 #include "roq/exceptions.h"
 
 #include "config.h"
-#include "flags.h"
+#include "roq/utils/mask.h"
 #include "strategy.h"
 
 using namespace std::chrono_literals;

@@ -82,7 +82,7 @@ void GridOrder<Self, DIR>::execute() {
   // flush the queue
   while(!pending_orders_.empty()) {
     auto& [txid, order] = pending_orders_.front();
-    if(order.flags_test(LimitOrder::PENDING_MODIFY)) {
+    if(order.flags.test(LimitOrder::PENDING_MODIFY)) {
       modify_order(txid, order);
     } else {
       create_order(txid, order);
@@ -127,7 +127,7 @@ order_txid_t GridOrder<Self, DIR>::modify_order(order_txid_t id, const  LimitOrd
   auto& order = orders_[id];
   //auto& level = levels_[order.price()];
   //level.canceling_volume += order.quantity();
-  order.flags_set(LimitOrder::PENDING_CANCEL);
+  order.flags.set(LimitOrder::PENDING_CANCEL);
   auto& new_level = levels_[new_order.price()];
   //new_level.pending_volume += new_order.quantity();
   auto new_id = self()->next_order_txid(id.order_id);
@@ -175,9 +175,9 @@ void GridOrder<Self,DIR>::order_canceled(order_txid_t id, LimitOrder& order, con
 template<class Self, int DIR>
 void GridOrder<Self,DIR>::order_completed(order_txid_t id, LimitOrder& order, const OrderUpdate& order_update) {
   auto& level = levels_[order.price()];
-  assert(order.flags_test(LimitOrder::WORKING));  
-  if(order.flags_test(LimitOrder::WORKING)) {
-    order.flags_set(LimitOrder::WORKING);
+  assert(order.flags.test(LimitOrder::WORKING));  
+  if(order.flags.test(LimitOrder::WORKING)) {
+    order.flags.set(LimitOrder::WORKING);
     level.working_volume -= order_update.remaining_quantity;
   }
   order.flags = LimitOrder::EMPTY;
@@ -188,18 +188,18 @@ void GridOrder<Self,DIR>::order_completed(order_txid_t id, LimitOrder& order, co
 template<class Self, int DIR>
 void GridOrder<Self,DIR>::order_working(order_txid_t id, LimitOrder& order, const OrderUpdate& order_update) {
   auto& level = levels_[order.price()];
-  assert(order.flags_test(LimitOrder::PENDING_NEW|LimitOrder::PENDING_MODIFY));  
-  assert(!order.flags_test(LimitOrder::WORKING));  
-  if(order.flags_test(LimitOrder::PENDING_NEW)) {
-    order.flags_reset(LimitOrder::PENDING_NEW);
+  assert(order.flags.test(LimitOrder::PENDING_NEW|LimitOrder::PENDING_MODIFY));  
+  assert(!order.flags.test(LimitOrder::WORKING));  
+  if(order.flags.test(LimitOrder::PENDING_NEW)) {
+    order.flags.reset(LimitOrder::PENDING_NEW);
     level.pending_volume -= order_update.remaining_quantity;
-    order.flags_set(LimitOrder::WORKING);  
+    order.flags.set(LimitOrder::WORKING);  
     level.working_volume += order_update.remaining_quantity;
   }
-  if(order.flags_test(LimitOrder::PENDING_MODIFY)) {
-    order.flags_reset(LimitOrder::PENDING_MODIFY);
+  if(order.flags.test(LimitOrder::PENDING_MODIFY)) {
+    order.flags.reset(LimitOrder::PENDING_MODIFY);
     level.pending_volume -= order_update.remaining_quantity;
-    order.flags_set(LimitOrder::WORKING);  
+    order.flags.set(LimitOrder::WORKING);  
     level.working_volume += order_update.remaining_quantity;
 
     assert(order.prev_routing_id!=undefined_order_id);
@@ -207,8 +207,8 @@ void GridOrder<Self,DIR>::order_working(order_txid_t id, LimitOrder& order, cons
     assert(orders_.contains(prev_id));
     auto& prev_order = orders_[prev_id];
     auto& prev_level = levels_[prev_order.price()];
-    assert(prev_order.flags_test(LimitOrder::PENDING_CANCEL) && prev_order.flags_test(LimitOrder::WORKING));
-    prev_order.flags_reset(LimitOrder::PENDING_CANCEL|LimitOrder::WORKING);
+    assert(prev_order.flags.test(LimitOrder::PENDING_CANCEL) && prev_order.flags.test(LimitOrder::WORKING));
+    prev_order.flags.reset(LimitOrder::PENDING_CANCEL|LimitOrder::WORKING);
     prev_level.canceling_volume -= prev_order.quantity();
     prev_level.working_volume -= prev_order.quantity();
     assert(prev_order.flags == LimitOrder::EMPTY);

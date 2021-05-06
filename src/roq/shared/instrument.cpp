@@ -17,52 +17,47 @@ namespace roq {
 
 
 Instrument::Instrument(
-    const std::string_view &exchange,
-    const std::string_view &symbol,
-    const std::string_view &account)
-    : exchange_(exchange), symbol_(symbol), account_(account),
-      depth_builder_(client::DepthBuilderFactory::create(symbol, depth_)) {
-}
+  const std::string_view &symbol,
+  const std::string_view &exchange)
+: Symbol(symbol, exchange)
+, depth_builder_(client::DepthBuilderFactory::create(symbol, depth_))
+{}
 
-double Instrument::position() const {
-  return position_;
-}
-
-void Instrument::operator()(const Connected &) {
-  if (utils::update(connected_, true)) {
-    log::info("[{}:{}] connected={}"_fmt, exchange_, symbol_, connected_);
+void Instrument::operator()(const roq::Connected &) {
+  if (flags.set(CONNECTED)) {
+    log::info("[{}:{}] connected={}"_fmt, exchange, symbol, flags.test(CONNECTED));
     check_ready();
   }
 }
 
-void Instrument::operator()(const Disconnected &) {
-  if (utils::update(connected_, false)) {
-    log::info("[{}:{}] connected={}"_fmt, exchange_, symbol_, connected_);
+void Instrument::operator()(const roq::Disconnected &) {
+  if (flags.reset(CONNECTED)) {
+    log::info("[{}:{}] connected={}"_fmt, exchange, symbol, flags.test(CONNECTED));
     // reset all cached state - await download upon reconnection
     reset();
   }
 }
 
-void Instrument::operator()(const DownloadBegin &download_begin) {
+void Instrument::operator()(const roq::DownloadBegin &download_begin) {
   if (!download_begin.account.empty())  // we only care about market (not account)
     return;
-  assert(!download_);
-  download_ = true;
-  log::info("[{}:{}] download={}"_fmt, exchange_, symbol_, download_);
+  assert(!flags.test(DOWNLOADING));
+  flags.set(DOWNLOADING);
+  flags.reset(REALTIME);
+  log::info("[{}:{}] downloading"_fmt, exchange, symbol);
 }
 
-void Instrument::operator()(const DownloadEnd &download_end) {
+void Instrument::operator()(const roq::DownloadEnd &download_end) {
   if (!download_end.account.empty())  // we only care about market (not account)
     return;
-  assert(download_);
-  download_ = false;
-  log::info("[{}:{}] download={}"_fmt, exchange_, symbol_, download_);
-  // update the ready flag
+  assert(flags.test(DOWNLOADING));
+  flags.reset(DOWNLOADING);
+  flags.set(REALTIME);
+  log::info("[{}:{}] realtime"_fmt, exchange, symbol);
   check_ready();
 }
 
-void Instrument::operator()(const GatewayStatus &gateway_status) {
-  // because the API doesn't (yet) expose Mask
+void Instrument::operator()(const roq::GatewayStatus &gateway_status) {
   log::info("gateway_status {}"_fmt, gateway_status);
   utils::Mask<SupportType> available(gateway_status.available),
       unavailable(gateway_status.unavailable);
@@ -73,16 +68,14 @@ void Instrument::operator()(const GatewayStatus &gateway_status) {
         SupportType::MARKET_STATUS,
         SupportType::MARKET_BY_PRICE,
     };
-    // readiness defined by full availability of all required message types
-    auto market_data = available.has_all(required) && unavailable.has_none(required);
-    if (utils::update(market_data_, market_data))
-      log::info("[{}:{}] market_data={}"_fmt, exchange_, symbol_, market_data_);
-    // sometimes useful to see what is missing
-    if (!market_data_) {
+    bool market_data = available.has_all(required) && unavailable.has_none(required);
+    if (flags.set(MARKETDATA, market_data))
+      log::info("[{}:{}] market_data"_fmt, exchange, symbol);
+    if (!flags.test(MARKETDATA)) {
       auto missing = required & ~available;
       log::debug("missing={:#x}"_fmt, missing.get());
     }
-  } else if (gateway_status.account.compare(account_) == 0) {
+  } else if (account_.compare(gateway_status.account) == 0) {
     // bit-mask of required message types
     static const utils::Mask<SupportType> required{
         SupportType::CREATE_ORDER,
@@ -91,11 +84,11 @@ void Instrument::operator()(const GatewayStatus &gateway_status) {
         SupportType::POSITION,
     };
     // readiness defined by full availability of all required message types
-    auto order_management = available.has_all(required) && unavailable.has_none(required);
-    if (utils::update(order_management_, order_management))
-      log::info("[{}:{}] order_management={}"_fmt, exchange_, symbol_, order_management_);
+    auto trading = available.has_all(required) && unavailable.has_none(required);
+    if (flags.set(TRADING, trading))
+      log::info("[{}:{}] trading"_fmt, exchange, symbol);
     // sometimes useful to see what is missing
-    if (!market_data_) {
+    if (!flags.test(MARKETDATA)) {
       auto missing = required & ~available;
       log::debug("missing={:#x}"_fmt, missing.get());
     }
@@ -104,25 +97,35 @@ void Instrument::operator()(const GatewayStatus &gateway_status) {
   check_ready();
 }
 
-void Instrument::operator()(const ReferenceData &reference_data) {
-  assert(exchange_.compare(reference_data.exchange) == 0);
-  assert(symbol_.compare(reference_data.symbol) == 0);
+#define ROQ_FIELD_UPDATE(dst, src, field) \
+  if (utils::update((dst).field, (src).field)) \
+    log::info("[{}:{}] {}={}"_fmt, (src).exchange, (src).symbol, #field, (dst).field);
+
+bool Instrument::ReferenceData::update(const roq::ReferenceData& data) {
+{
+  ROQ_FIELD_UPDATE(*data_, data, tick_size);
+  ROQ_FIELD_UPDATE(*data_, data, min_trade_vol);
+  ROQ_FIELD_UPDATE(*data_, data, multiplier);
+  return true;
+}
+
+bool Instrument::ReferenceData::is_ready() const {
+  return utils::compare(data_->tick_size, 0.) > 0 &&
+        utils::compare(data_->min_trade_vol, 0.) > 0 &&
+        //utils::compare(multiplier_, 0.) > 0 &&
+        true;
+}
+
+void Instrument::operator()(const roq::ReferenceData &reference_data) {
+  assert(exchange.compare(reference_data.exchange) == 0);
+  assert(symbol.compare(reference_data.symbol) == 0);
   // update the depth builder
   depth_builder_->update(reference_data);
-  // update our cache
-  if (utils::update(tick_size_, reference_data.tick_size)) {
-    log::info("[{}:{}] tick_size={}"_fmt, exchange_, symbol_, tick_size_);
-  }
-  if (utils::update(min_trade_vol_, reference_data.min_trade_vol)) {
-    log::info("[{}:{}] min_trade_vol={}"_fmt, exchange_, symbol_, min_trade_vol_);
-  }
-  if (utils::update(multiplier_, reference_data.multiplier)) {
-    log::info("[{}:{}] multiplier={}"_fmt, exchange_, symbol_, multiplier_);
-  }
+  // update cached reference data
+  refdata_.update(reference_data);
   // update the ready flag
   check_ready();
 }
-
 void Instrument::operator()(const MarketStatus &market_status) {
   assert(exchange_.compare(market_status.exchange) == 0);
   assert(symbol_.compare(market_status.symbol) == 0);
@@ -137,35 +140,19 @@ void Instrument::operator()(const MarketStatus &market_status) {
 void Instrument::operator()(const MarketByPriceUpdate &market_by_price_update) {
   assert(exchange_.compare(market_by_price_update.exchange) == 0);
   assert(symbol_.compare(market_by_price_update.symbol) == 0);
-  if (ROQ_UNLIKELY(download_))
+  if (ROQ_UNLIKELY(flags.test(REALTIME)))
     log::info("MarketByPriceUpdate={}"_fmt, market_by_price_update);
   check_ready();
-  // update depth
-  // note!
-  //   market by price only gives you *changes*.
-  //   you will most likely want to use the the price to look up
-  //   the relative position in an order book and then modify the
-  //   liquidity.
-  //   the depth builder helps you maintain a correct view of
-  //   the order book.
   depth_builder_->update(market_by_price_update);
-  log::trace_1("[{}:{}] depth=[{}]"_fmt, exchange_, symbol_, roq::join(depth_, ", "_sv));
+  log::trace_1("[{}:{}] depth=[{}]"_fmt, exchange, symbol, roq::join(depth_, ", "_sv));
   validate(depth_);
 }
 
 void Instrument::operator()(const MarketByOrderUpdate &market_by_order_update) {
   assert(exchange_.compare(market_by_order_update.exchange) == 0);
   assert(symbol_.compare(market_by_order_update.symbol) == 0);
-  if (ROQ_UNLIKELY(download_))
+  if (ROQ_UNLIKELY(flags.test(REALTIME)))
     log::info("MarketByOrderUpdate={}"_fmt, market_by_order_update);
-  // update depth
-  // note!
-  //   market by order only gives you *changes*.
-  //   you will most likely want to use the the price and order_id
-  //   to look up the relative position in an order book and then
-  //   modify the liquidity.
-  //   the depth builder helps you maintain a correct view of
-  //   the order book.
   /*
   depth_builder_->update(market_by_order_update);
   log::trace_1(
@@ -177,16 +164,9 @@ void Instrument::operator()(const MarketByOrderUpdate &market_by_order_update) {
   */
 }
 
+/* WON'T work for multiple ords
 void Instrument::operator()(const OrderUpdate &order_update) {
-  // note!
-  //   the assumption is that there is never more than one working
-  //   order
-  if (last_order_id_ != order_update.order_id) {
-    last_order_id_ = order_update.order_id;
-    last_traded_quantity_ = 0.0;
-  }
-  auto quantity = order_update.traded_quantity - last_traded_quantity_;
-  last_traded_quantity_ = order_update.traded_quantity;
+
   switch (order_update.side) {
     case Side::BUY:
       position_ += quantity;
@@ -199,11 +179,12 @@ void Instrument::operator()(const OrderUpdate &order_update) {
   }
   log::info("[{}:{}] position={}"_fmt, exchange_, symbol_, position());
 }
+*/
 
 void Instrument::operator()(const PositionUpdate &position_update) {
-  assert(account_.compare(position_update.account) == 0);
-  log::info("[{}:{}] position_update={}"_fmt, exchange_, symbol_, position_update);
-  if (download_) {
+  assert(account.compare(position_update.account) == 0);
+  log::info("[{}:{}] position_update={}"_fmt, exchange, symbol, position_update);
+  if (!flags.get(REALTIME)) {
     // note!
     //   only update positions when downloading
     //   at run-time we're better off maintaining own positions
@@ -219,19 +200,23 @@ void Instrument::operator()(const PositionUpdate &position_update) {
         log::warn("Unexpected side={}"_fmt, position_update.side);
       }
     }
+  } else {
+    /*if(std::fabs(position_update.position, position_)>critical_position_imbalance_) {
+      // TODO: ALARM!
+    }*/
   }
 }
 
 void Instrument::check_ready() {
-  auto before = ready_;
-  ready_ = connected_ && 
-          !download_ && 
-          utils::compare(tick_size_, 0.0) > 0 &&
-          utils::compare(min_trade_vol_, 0.0) > 0 && 
-          //utils::compare(multiplier_, 0.0) > 0 &&
-          trading_status_ == TradingStatus::OPEN && 
-          market_data_;// && 
-          //order_management_;
+  auto before = flags.test(READY);
+  flags.set(READY, 
+    flags.test(CONNECTED) && 
+    !flags.test(DOWNLOADING) && 
+    refdata_.is_ready() &&
+    status_.is_ready() &&
+    flags.test(MARKETDATA) &&
+    true;
+    
   if (ROQ_UNLIKELY(ready_ != before))
     log::info("[{}:{}] ready={}"_fmt, exchange_, symbol_, ready_);
   if(ROQ_UNLIKELY((ready_counter_++)%10)==0) {

@@ -2,6 +2,7 @@
 #include <limits>
 
 #include "roq/shared/order.h"
+#include "roq/shared/quote.h"
 #include "roq/utils/common.h"
 #include "roq/utils/update.h"
 
@@ -103,13 +104,15 @@ void Strategy::operator()(const Event<FundsUpdate> &event) {
   log::info("FundsUpdate={}"_fmt, event.value);
 }
 
-void Strategy::update() {
-  if (instrument_.is_marketdata_ready() && 
-      model_.update(instrument_) &&
-      instrument_.is_trading_ready()) 
+bool Strategy::Data::modify() const {
+  if (!instrument.is_marketdata_ready()) {
+    self->modify(Side::BUY, make_empty_quotes());
+    return false;
+  } 
+  if (!instrument.is_trading_ready()) {
+  }&& 
+      is_trading_ready()) 
   {
-      Quote bid = model_.bid();
-      Quote ask = model_.ask();
       if(validate_quotes(bid, ask)) {
         bid_.modify(make_quotes<1>({model_.bid()}));
         ask_.modify(make_quotes<1>({model_.ask()}));
@@ -127,23 +130,12 @@ void Strategy::update() {
     ask_.execute();
   }
 }
-
-bool Strategy::validate_quotes(Quote& bid, Quote& ask) {
-  if (!limits_.validate(bid, ask)) {
-    log::info("Limits *VIOLATED*"_sv);
-    return false;
-  }  
-  return true;
-}
-
-template<class ValidateOrder>
-bool Strategy::validate_order(const ValidateOrder& order) {
-  if(order.quantity()<instrument_.min_trade_vol()+Eps) {
-    log::warn("order.quantity < min_trade_vol"_sv);
-    return false;
+void Strategy::update() {
+  for(auto& data: data_) {
+  
   }
-  return true;
 }
+
 
 order_txid_t Strategy::create_order(order_txid_t id, const LimitOrder& order) {
   if (!Flags::enable_trading()) {

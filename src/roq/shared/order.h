@@ -12,6 +12,7 @@
 #include "roq/shared/quote.h"
 #include "roq/shared/type_traits.h"
 #include "roq/format.h"
+#include "roq/shared/bitmask.h"
 
 namespace roq {
 inline namespace shared {
@@ -79,18 +80,10 @@ struct LimitOrder {
   auto quantity() const { return quote.quantity; }
   auto side() const { return quote.side; }
 
-  void flags_set(uint32_t flag) {
-    flags = flags_t(flags | flag);
-  }
-  void flags_reset(uint32_t flag) {
-    flags = flags_t(flags & ~flag);
-  }
-  uint32_t flags_test(uint32_t mask) {
-    return flags & mask;
-  }
+ 
 
   Quote quote {};
-  flags_t flags {};
+  shared::BitMask<flags_t> flags {};
   volume_t est_volume_before = 0.;  // estimated volume before this order in the level
   LimitOrder* next_order {}; //! next order in the level
   order_id_t prev_routing_id {undefined_order_id}; //! for pending modify store previous routing_id
