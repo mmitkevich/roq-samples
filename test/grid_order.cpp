@@ -251,7 +251,7 @@ TEST(grid_order, one_ask_move_down) {
 TEST(grid_order, three_bids_move_down) {
     MockStrategy s;
     
-    auto quotes = GridQuote{100., 9}.set_tick({1., 3.});
+    auto quotes = GridQuote(Side::BUY, 100., 9).set_tick(1., 3.);
     s.bid.modify(quotes);
     s.bid.execute(s);
     log::info("bids: {}"_fmt, s.bid);
@@ -270,7 +270,7 @@ TEST(grid_order, three_bids_move_down) {
 TEST(grid_order, three_asks_move_away) {
     MockStrategy s;
     
-    auto quotes = GridQuote({100., 9}).set_tick({1.,3.});
+    auto quotes = GridQuote(Side::SELL, 100., 9).set_tick(1.,3.);
     s.ask.modify(quotes);
     s.ask.execute(s);
     log::info("asks: {}"_fmt, s.ask);

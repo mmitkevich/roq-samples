@@ -30,17 +30,13 @@ inline int to_dir(Side side) {
 struct Quote {
   Quote() = default;
  
-  Quote(Side side, price_t price, volume_t volume)
+  explicit Quote(Side side, price_t price, volume_t qty)
   : side_(side)
   , price_(price)
-  , quantity_(volume) {}
+  , quantity_(qty) {}
 
-  Quote(price_t price, volume_t volume)
-  : price_(price)
-  , quantity_(volume) {}  
-
-  Quote(price_t price)
-  : price_(price) {}  
+  explicit Quote(price_t price) : Quote(Side::UNDEFINED, price, 0) {}
+  explicit Quote(price_t price, volume_t qty) : Quote(Side::UNDEFINED, price, qty) {}
 
   void reset() {
     side_ = Side::UNDEFINED;
@@ -78,7 +74,9 @@ struct GridQuote : Quote {
   using Quote::Quote;
   GridQuote(Quote quote, Quote tick)
   : Quote(quote)
-  , tick_(tick) {}
+  , tick_(tick) {
+    assert(quote.side()!=Side::UNDEFINED);
+  }
 
   std::size_t size() const { return std::ceil(quantity_/tick_.quantity_); }
   
@@ -96,9 +94,9 @@ struct GridQuote : Quote {
     return result;
   }
   const Quote& tick() const { return tick_; }
-  auto& set_tick(const Quote& val) { tick_ = val; return *this; }
+  auto& set_tick(price_t price, volume_t qty) { tick_ = Quote(price, qty); return *this; }
 
-  Quote tick_ { INFINITY, 0 };
+  Quote tick_ { INFINITY };
 };
 ///
 template<uint32_t MAX_SIZE>
