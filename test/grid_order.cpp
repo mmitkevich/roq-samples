@@ -10,6 +10,7 @@
 #include "roq/shared/grid_order.inl"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/btree_map.h"
+#include "roq/shared/order_map.h"
 
 using namespace roq;
 using namespace roq::utils;
@@ -86,9 +87,9 @@ struct MockStrategy {
   
   constexpr static price_t s_tick_size = 1.0;
 
-  GridOrder<Self, 1> bid{this, s_tick_size};
-  GridOrder<Self, -1> ask{this, s_tick_size};
-
+  GridOrder<1> bid{orders, s_tick_size};
+  GridOrder<-1> ask{orders, s_tick_size};
+  OrderMap orders;
   int create_count = 0;
   int modify_count = 0;
   int cancel_count = 0;
@@ -184,15 +185,15 @@ bool grid_equals(GridOrder& grid, std::map<price_t, volume_t>&& expected) {
 
 TEST(grid_order, one_bid_move_down) {
     MockStrategy s;
-    auto quotes = make_quotes<1>({Quote {.price = 100., .quantity = 10.}});
+    auto quotes = make_quotes<1>({Quote {Side::BUY, 100., 10.}});
     s.bid.modify(quotes);
-    s.bid.execute();
+    s.bid.execute(s);
     EXPECT_EQ(s.create_count, 1);
     EXPECT_EQ(s.total_count(), 1);
     EXPECT_TRUE(grid_equals(s.bid, {{100.,10.}}));
     quotes.set_price(99.);
     s.bid.modify(quotes);
-    s.bid.execute();
+    s.bid.execute(s);
     EXPECT_EQ(s.modify_count, 1);
     EXPECT_EQ(s.total_count(), 2);
     EXPECT_TRUE(grid_equals(s.bid, {{99.,10.}}));
@@ -200,16 +201,16 @@ TEST(grid_order, one_bid_move_down) {
 
 TEST(grid_order, one_bid_move_up) {
     MockStrategy s;
-    auto quotes = make_quotes<1>({Quote {.price = 100., .quantity = 10.}});
+    auto quotes = make_quotes<1>({Quote {Side::BUY, 100., 10.}});
     s.bid.modify(quotes);
-    s.bid.execute();
+    s.bid.execute(s);
     EXPECT_EQ(s.create_count, 1);
     EXPECT_EQ(s.total_count(), 1);
     EXPECT_TRUE(grid_equals(s.bid, {{100.,10.}}));
 
     quotes.set_price(101.);
     s.bid.modify(quotes);
-    s.bid.execute();
+    s.bid.execute(s);
     EXPECT_EQ(s.modify_count, 1);
     EXPECT_EQ(s.total_count(), 2);
     EXPECT_TRUE(grid_equals(s.bid, {{101.,10.}}));
@@ -217,15 +218,15 @@ TEST(grid_order, one_bid_move_up) {
 
 TEST(grid_order, one_ask_move_up) {
     MockStrategy s;
-    auto quotes = make_quotes<1>({Quote {.price = 100., .quantity = 10.}});
+    auto quotes = make_quotes<1>({Quote {Side::SELL, 100., 10.}});
     s.ask.modify(quotes);
-    s.ask.execute();
+    s.ask.execute(s);
     EXPECT_EQ(s.create_count, 1);
     EXPECT_EQ(s.total_count(), 1);
     EXPECT_TRUE(grid_equals(s.ask, {{100.,10.}}));
     quotes.set_price(101.);
     s.ask.modify(quotes);
-    s.ask.execute();
+    s.ask.execute(s);
     EXPECT_EQ(s.modify_count, 1);
     EXPECT_EQ(s.total_count(), 2);
     EXPECT_TRUE(grid_equals(s.ask, {{101.,10.}}));
@@ -233,15 +234,15 @@ TEST(grid_order, one_ask_move_up) {
 
 TEST(grid_order, one_ask_move_down) {
     MockStrategy s;
-    auto quotes = make_quotes<1>({Quote {.price = 100., .quantity = 10.}});
+    auto quotes = make_quotes<1>({Quote {Side::SELL, 100., 10.}});
     s.ask.modify(quotes);
-    s.ask.execute();
+    s.ask.execute(s);
     EXPECT_EQ(s.create_count, 1);
     EXPECT_EQ(s.total_count(), 1);
     EXPECT_TRUE(grid_equals(s.ask, {{100.,10.}}));
     quotes.set_price(99.);
     s.ask.modify(quotes);
-    s.ask.execute();
+    s.ask.execute(s);
     EXPECT_EQ(s.modify_count, 1);
     EXPECT_EQ(s.total_count(), 2);
     EXPECT_TRUE(grid_equals(s.ask, {{99.,10.}}));
@@ -250,16 +251,16 @@ TEST(grid_order, one_ask_move_down) {
 TEST(grid_order, three_bids_move_down) {
     MockStrategy s;
     
-    auto quotes = GridQuotes{.quote={.side = Side::BUY, .price = 100., .quantity = 9}, .tick = {.price=1., .quantity=3.}};
+    auto quotes = GridQuote{100., 9}.set_tick({1., 3.});
     s.bid.modify(quotes);
-    s.bid.execute();
+    s.bid.execute(s);
     log::info("bids: {}"_fmt, s.bid);
     EXPECT_EQ(s.create_count, 3);
     EXPECT_EQ(s.total_count(), 3);
     EXPECT_TRUE(grid_equals(s.bid, {{100.,3.},{99.,3.},{98.,3.}}));
     quotes.set_price(99.);
     s.bid.modify(quotes);
-    s.bid.execute();
+    s.bid.execute(s);
     log::info("bids: {}"_fmt, s.bid);
     EXPECT_EQ(s.modify_count, 1);
     EXPECT_EQ(s.total_count(), 4);
@@ -269,16 +270,16 @@ TEST(grid_order, three_bids_move_down) {
 TEST(grid_order, three_asks_move_away) {
     MockStrategy s;
     
-    auto quotes = GridQuotes{.quote={.side = Side::BUY, .price = 100., .quantity = 9}, .tick = {.price=1., .quantity=3.}};
+    auto quotes = GridQuote({100., 9}).set_tick({1.,3.});
     s.ask.modify(quotes);
-    s.ask.execute();
+    s.ask.execute(s);
     log::info("asks: {}"_fmt, s.ask);
     EXPECT_EQ(s.create_count, 3);
     EXPECT_EQ(s.total_count(), 3);
     EXPECT_TRUE(grid_equals(s.ask, {{100.,3.},{99.,3.},{98.,3.}}));
     quotes.set_price(50.);
     s.ask.modify(quotes);
-    s.ask.execute();
+    s.ask.execute(s);
     log::info("asks: {}"_fmt, s.ask);
     EXPECT_EQ(s.modify_count, 3);
     EXPECT_EQ(s.total_count(), 6);

@@ -14,7 +14,7 @@ struct BitMask {
   BitMask(underlying_type flags={})
   : flags(flags) {}
 
-  operator T() const { return flags; }
+  operator T() const { return (T)flags; }
 
   bool all(underlying_type mask) const {
       return (flags & mask) == mask;
@@ -22,18 +22,20 @@ struct BitMask {
   bool none(underlying_type mask) const {
       return !(flags & mask);
   }
-  bool any(underlying_type mask) const {
-      return (flags & mask);
-  }
-  bool set(type flag) {
+  bool set(underlying_type flag) {
     auto prev = flags;
     flags = type(flags | flag);
     return flags!=prev;
   }
-  bool reset(type flag) {
+  bool reset(underlying_type flag) {
     auto prev = flags;
     flags = type(flags & ~flag);
     return flags!=prev;
+  }
+  bool reset() {
+    auto prev = flags;
+    flags = 0;
+    return prev!=flags;
   }
   bool set(type flag, bool val) {
     auto prev = flags;
@@ -41,8 +43,9 @@ struct BitMask {
         flags = flags | flag;
     else
         flags = flags & (~flag);
+    return flags!=prev;
   }
-  bool test(type mask) const {
+  bool test(underlying_type mask) const {
     return (flags & mask);
   }
 private:

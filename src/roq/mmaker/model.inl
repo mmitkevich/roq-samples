@@ -2,44 +2,47 @@
 #include <numeric>
 #include "model.h"
 #include "roq/logging.h"
+#include "roq/shared/model.inl"
 
 namespace roq {
 namespace mmaker {
 
 using namespace roq::literals;
+
+/// quotes for instrument has been updated
 template<class Strategy>
-void Model::quotes_updated(Strategy& strat, const Instrument& ins) {
-  const auto& depth = ins.depth();
+void Model::quotes_updated(Strategy& strategy, instrument_id_t iid) {
+  if(iid!=QUOTING)
+    return;
+
+  auto& ins = strategy.instruments()[iid];
   auto tick = ins.refdata().tick_size();
   auto qty = ins.refdata().min_trade_vol();
-  Quote qbid { 
-    .side = Side::BUY,
-    .price =  ins.bid().price - tick*100, 
-    .quantity = qty
+  
+  Quote buy { 
+    .side_ = Side::BUY,
+    .price_ =  ins.bid().price() - tick*100, 
+    .quantity_ = qty
   };
-  Quote qask {
-    .side = Side::SELL,
-    .price = ins.ask().price + tick*100,
-    .quantity = qty
+  Quote sell {
+    .side_ = Side::SELL,
+    .price_ = ins.ask().price() + tick*100,
+    .quantity_ = qty
   };
-  log::debug(
-    "model: {{ bid:{}, ask:{}, tick:{}, qbid:{} qask:{} }}"_fmt,
-    ins.bid(),
-    ins.ask(),
-    tick,
-    qbid,
-    qask);
-  strat.modify(qbid);
-  strat.modify(qask);
+  log::debug("model: {{ bid:{}, ask:{}, tick:{}, buy:{} sell:{} }}"_fmt,
+    ins.bid(), ins.ask(), tick, buy, sell);
+  
+  strategy.modify_orders(ins, buy, sell);
 }
 
-bool Model::validate(const Instrument& ins) {  // require full depth
-  const auto& depth = ins.depth();
-  return std::accumulate(depth.begin(), depth.end(), true, [](bool value, const Layer &layer) {
-    return value && utils::compare(layer.bid_quantity, 0.0) > 0 &&
-           utils::compare(layer.ask_quantity, 0.0) > 0;
-  });
+template<class Strategy>
+bool Model::validate(Strategy& strategy, instrument_id_t iid) {
+  if(iid==QUOTING)
+    return true;
+  if(!has_bid_ask(strategy, iid)) return false; // require bid ask for all instruments except quoted one
 }
+
+
 
 }  // namespace mmaker
 }  // namespace roq

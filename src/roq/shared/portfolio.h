@@ -13,6 +13,7 @@ struct Position {
     : value(val) {}
     operator double() const { assert(!std::isnan(value)); return value; }
     bool empty() const { return std::isnan(value); }
+    void reset() { value = NaN; }
 public:
     double value;
 };

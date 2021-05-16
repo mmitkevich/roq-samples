@@ -8,6 +8,8 @@
 
 #include "roq/api.h"
 #include <roq/exceptions.h>
+#include <roq/market_status.h>
+#include <roq/order_update.h>
 #include <roq/reference_data.h>
 #include "roq/numbers.h"
 #include "roq/client/depth_builder.h"
@@ -20,16 +22,23 @@ namespace roq {
 inline namespace shared {
 
 struct Symbol {
-  Symbol(const std::string_view& symbol, const std::string_view& exchange)
+  Symbol(std::string_view symbol, std::string_view exchange)
   : symbol(symbol)
   , exchange(exchange) {}
+  friend inline bool operator==(const Symbol& lhs, const Symbol& rhs) {
+    return lhs.symbol == rhs.symbol && lhs.exchange == rhs.exchange;
+  }
 public:
   std::string_view symbol;
   std::string_view exchange;
 };
 
+using instrument_id_t = int32_t;
+constexpr static instrument_id_t undefined_instrument_id = -1;
+
 struct Instrument : Symbol {
   struct ReferenceData {
+    void reset();
     bool update(const roq::ReferenceData& data);
     auto tick_size() const { return data_->tick_size; }
     auto min_trade_vol() const { return data_->min_trade_vol; }
@@ -41,16 +50,20 @@ struct Instrument : Symbol {
   };
   
   struct Status {
-    bool is_trading_open() const { return trading_status == TradingStatus::OPEN; }
-    bool is_auction() const { return trading_status == TradingStatus::CLOSED; }
-    bool is_trading_closed() const { return trading_status != TradingStatus::OPEN; }
-    
     Status(TradingStatus trading_status=TradingStatus::UNDEFINED)
-    : trading_status(trading_status) {}
+    : trading_status_(trading_status) {}
+    
+    bool is_trading_open() const { return trading_status_ == TradingStatus::OPEN; }
+    bool is_auction() const { return trading_status_ == TradingStatus::CLOSED; }
+    bool is_trading_closed() const { return trading_status_ != TradingStatus::OPEN; }
+    
+    void reset() { trading_status_ = TradingStatus::UNDEFINED; }
+    TradingStatus trading_status() const { return trading_status_; }    
 
-    bool is_ready() const { return trading_status == TradingStatus::OPEN; }
+    bool update(const MarketStatus& update);
+    bool is_ready() const { return trading_status_ == TradingStatus::OPEN; }
   public:
-    TradingStatus trading_status;
+    TradingStatus trading_status_;
   };
 
   using Portfolio = roq::shared::Portfolio;
@@ -64,12 +77,14 @@ struct Instrument : Symbol {
     CONNECTED         = 1u << 2,
     DOWNLOADING       = 1u << 3,
     REALTIME          = 1u << 4,
+    VWAP              = 1u << 8,  // use vwap prices instead of best for "quotes"
     READY             = 1u << 30
   };
 
   Instrument(
       const std::string_view &exchange,
-      const std::string_view &symbol);
+      const std::string_view &symbol,
+      const std::string_view &account);
 
   Instrument(Instrument &&) = default;
   Instrument(const Instrument &) = delete;
@@ -83,6 +98,9 @@ struct Instrument : Symbol {
   bool is_trading_ready() const { 
     return flags.all(MARKETDATA | CONNECTED | REALTIME);
   }
+
+  instrument_id_t id() const { return id_; }
+  void set_id(instrument_id_t val) { id_ = val; }
 
   const ReferenceData& refdata() const { return refdata_; }
 
@@ -105,27 +123,27 @@ struct Instrument : Symbol {
   void operator()(const roq::MarketStatus &);
   void operator()(const roq::MarketByPriceUpdate &);
   void operator()(const roq::MarketByOrderUpdate &);
-  //void operator()(const roq::OrderUpdate &);
+  void operator()(const roq::OrderUpdate &);
   void operator()(const roq::PositionUpdate &);
 
- protected:
-  void check_ready();
+  template<class Order>
+  bool validate_order(const Order&) { return true; }
 
   void reset();
-
+ protected:
+  void check_ready();
   void validate(const Depth &);
  
  public:
   shared::BitMask<flags_t> flags {};
  private:
+  instrument_id_t id_;
   Account account_;
   Status status_ {};
   ReferenceData refdata_ {};
   Position position_ {};  
   Depth depth_ {};
   std::unique_ptr<client::DepthBuilder> depth_builder_;
-  uint32_t last_order_id_ = {};
-  double last_traded_quantity_ = {};
   std::size_t ready_counter_ = {};
 };
 

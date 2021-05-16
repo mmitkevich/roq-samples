@@ -8,8 +8,8 @@ add_executable(
   config.cpp
   ../shared/ema.cpp
   ../shared/instrument.cpp
+  ../shared/strategy.cpp
   model.cpp
-  strategy.cpp
   main.cpp)
 
 target_link_libraries("${TARGET_NAME}" PRIVATE ${TARGET_NAME}-flags roq-client::roq-client

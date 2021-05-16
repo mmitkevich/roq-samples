@@ -10,6 +10,6 @@ roq::detail::sink_t log = [](const std::string_view& message) { std::cerr << mes
 
 int main(int argc, char **argv) {
   ::testing::InitGoogleTest(&argc, argv);
-  roq::detail::info = roq::detail::warning = roq::detail::error = roq::detail::critical = detail::log;
+  roq::detail::INFO = roq::detail::WARNING = roq::detail::ERROR = roq::detail::CRITICAL = detail::log;
   return RUN_ALL_TESTS();
 }

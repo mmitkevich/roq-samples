@@ -4,16 +4,16 @@
 #include <variant>
 #include <vector>
 #include <cstdint>
+#include "instrument.h"
 
 namespace roq {
 namespace shared {
 
-using InstrumentId = uint32_t;
 using VarId = std::string_view;
 
 using NumericVar = std::vector<double>;
 using IntegerVar = std::vector<int64_t>;
-using InstrumentVar = std::vector<InstrumentId>;
+using InstrumentVar = std::vector<instrument_id_t>;
 using Var = std::variant<NumericVar, IntegerVar, InstrumentVar>;
 
 struct Variables {

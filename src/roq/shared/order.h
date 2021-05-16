@@ -47,7 +47,7 @@ struct order_txid_t {
     }
 };
 
-struct LimitOrder {
+struct LimitOrder : Quote {
   enum flags_t : uint32_t {
     EMPTY          = 0,
     WORKING        = 1,
@@ -59,14 +59,12 @@ struct LimitOrder {
   };
   LimitOrder() = default;
   LimitOrder(Quote quote, flags_t flags=EMPTY)
-  : quote(quote)
+  : Quote(quote)
   , flags(flags) {}
-
-  operator Quote& () { return quote; }
 
   void reset() {
     flags = EMPTY;
-    quote.reset();
+    Quote::reset();
   }
 
   bool empty() const { return flags==EMPTY; }
@@ -75,22 +73,16 @@ struct LimitOrder {
   bool is_pending_cancel() const { return flags & PENDING_CANCEL; }
   bool is_working() const { return flags & WORKING; }
   LimitOrder& tail_order() { LimitOrder* tail = this; while(tail->next_order) tail=tail->next_order; return *tail; }
-  
-  auto price() const { return quote.price; }
-  auto quantity() const { return quote.quantity; }
-  auto side() const { return quote.side; }
 
- 
-
-  Quote quote {};
+public:
   shared::BitMask<flags_t> flags {};
   volume_t est_volume_before = 0.;  // estimated volume before this order in the level
   LimitOrder* next_order {}; //! next order in the level
   order_id_t prev_routing_id {undefined_order_id}; //! for pending modify store previous routing_id
 };
 
-} // namespace shared
-} // namespace roq
+} // shared
+} // roq
 
 #define ROQ_FLAGS_PRINT(os, flags, clazz, mask) if(flags & clazz::mask) os << "+" #mask;
 

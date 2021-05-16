@@ -10,15 +10,16 @@
 #include "roq/exceptions.h"
 
 #include "config.h"
-#include "roq/utils/mask.h"
+//#include "roq/utils/mask.h"
 #include "strategy.h"
+#include "strategy.inl"
+#include "flags.h"
 
 using namespace std::chrono_literals;
 using namespace roq::literals;
 
 namespace roq {
 namespace mmaker {
-
 
 int Application::main_helper(const roq::span<std::string_view> &args) {
   assert(!args.empty());
@@ -33,6 +34,9 @@ int Application::main_helper(const roq::span<std::string_view> &args) {
   //   * unix domain sockets (trading) or
   //   * event logs (simulation)
   auto connections = args.subspan(1);
+  
+  using Strategy = mmaker::Strategy<mmaker::Model, mmaker::Flags>;
+
   if (Flags::simulation()) {
     // collector
     auto snapshot_frequency = 1s;
