@@ -8,7 +8,8 @@ namespace shared {
 
 template<class Context>
 order_txid_t OrderMap::create_order(order_txid_t id, const LimitOrder& new_order, Context& context) {
-  pending_orders_.emplace_back(id, new_order);
+  auto& pending_order = pending_orders_.emplace_back(id, new_order);
+  pending_order.second.flags.set(LimitOrder::PENDING_NEW);
   return id;
 }
 
@@ -37,7 +38,8 @@ order_txid_t OrderMap::cancel_order(order_txid_t id, Context& context) {
 
 template<class Context>
 order_txid_t OrderMap::modify_order(order_txid_t id, const  LimitOrder& new_order, Context& context) {
-  pending_orders_.emplace_back(id, new_order);
+  auto& pending_order = pending_orders_.emplace_back(id, new_order);
+  pending_order.second.flags.set(LimitOrder::PENDING_MODIFY);
   return id;
 }
 
@@ -61,8 +63,10 @@ void OrderMap::flush_orders(Context& context) {
     auto& [txid, order] = pending_orders_.front();
     if(order.flags.test(LimitOrder::PENDING_MODIFY)) {
       do_modify_order(txid, order, context);
-    } else {
+    } else if(order.flags.test(LimitOrder::PENDING_NEW)) {
       do_create_order(txid, order, context);
+    } else {
+      assert(false);
     }
     pending_orders_.pop_front();
   }

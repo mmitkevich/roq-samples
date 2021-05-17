@@ -10,6 +10,7 @@
 #include "roq/utils/compare.h"
 #include "roq/numbers.h"
 #include "roq/format.h"
+#include "roq/logging.h"
 
 #include "roq/shared/price.h"
 
@@ -84,13 +85,17 @@ struct GridQuote : Quote {
 
   Quote operator[](std::size_t i) const {
     int dir = to_dir(side_);
-    price_t price_b = dir>0 ? std::floor(price_/tick_.price_)*tick_.price_ : std::ceil(price_/tick_.price_)*tick_.price_;
-    price_b -= dir*i*tick_.price();
-    Quote result {
-      this->side_,
-      i==0 ? price_: price_b,
-      i==0 ? quantity_ - (size()-1)*tick_.quantity_ : tick_.quantity_
-    };
+    price_t price_b = dir>0 ? std::floor(price_/tick_.price_)*tick_.price_
+                            : std::ceil(price_/tick_.price_)*tick_.price_;
+    std::size_t sze = this->size();
+    price_t p = price_;
+    volume_t q = quantity_ - (sze-1)*tick_.quantity_;
+    if(i>0) {
+      p = price_b - double(dir)*double(i)*tick_.price_;
+      q = tick_.quantity_;
+    }
+    Quote result(side_, p, q);
+    assert(std::fabs(result.price_)<1e8); // XXX
     return result;
   }
   const Quote& tick() const { return tick_; }

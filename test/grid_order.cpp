@@ -267,7 +267,7 @@ TEST(grid_order, three_bids_move_down) {
     EXPECT_TRUE(grid_equals(s.bid, {{99.,3.},{98.,3.},{97.,3.}}));
 }
 
-TEST(grid_order, three_asks_move_away) {
+TEST(grid_order, three_asks_move_up) {
     MockStrategy s;
     
     auto quotes = GridQuote(Side::SELL, 100., 9).set_tick(1.,3.);
@@ -276,12 +276,12 @@ TEST(grid_order, three_asks_move_away) {
     log::info("asks: {}"_fmt, s.ask);
     EXPECT_EQ(s.create_count, 3);
     EXPECT_EQ(s.total_count(), 3);
-    EXPECT_TRUE(grid_equals(s.ask, {{100.,3.},{99.,3.},{98.,3.}}));
-    quotes.set_price(50.);
+    EXPECT_TRUE(grid_equals(s.ask, {{100.,3.},{101.,3.},{102.,3.}}));
+    quotes.set_price(150.);
     s.ask.modify(quotes);
     s.ask.execute(s);
     log::info("asks: {}"_fmt, s.ask);
     EXPECT_EQ(s.modify_count, 3);
     EXPECT_EQ(s.total_count(), 6);
-    EXPECT_TRUE(grid_equals(s.ask, {{50.,3.},{49.,3.},{48.,3.}}));
+    EXPECT_TRUE(grid_equals(s.ask, {{150.,3.},{151.,3.},{152.,3.}}));
 }
