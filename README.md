@@ -77,13 +77,12 @@ source ~/conda/bin/activate
 
 conda install -y \
     git \
+    make \
     cmake \
-    flatbuffers \
-    fmt
+    abseil-cpp
 
 conda install -y --channel https://roq-trading.com/conda/stable \
-    roq-oss-range-v3 \
-    roq-oss-span-lite
+    roq-client
 ```
 
 ## Building

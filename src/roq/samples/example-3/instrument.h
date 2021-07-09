@@ -16,14 +16,11 @@ namespace example_3 {
 
 class Instrument final {
  public:
-  static const constexpr size_t MAX_DEPTH = 3u;
+  static const constexpr size_t MAX_DEPTH = 3;
 
   using Depth = std::array<Layer, MAX_DEPTH>;
 
-  Instrument(
-      const std::string_view &exchange,
-      const std::string_view &symbol,
-      const std::string_view &account);
+  Instrument(const std::string_view &exchange, const std::string_view &symbol, const std::string_view &account);
 
   Instrument(Instrument &&) = default;
   Instrument(const Instrument &) = delete;

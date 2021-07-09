@@ -17,17 +17,17 @@ namespace example_2 {
 
 int Application::main_helper(const roq::span<std::string_view> &args) {
   assert(!args.empty());
-  if (args.size() == 1u)
-    throw RuntimeErrorException("Expected arguments"_sv);
-  if (args.size() != 3u)
-    throw RuntimeErrorException(
+  if (args.size() == 1)
+    log::fatal("Expected arguments"_sv);
+  if (args.size() != 3)
+    log::fatal(
         "Expected exactly two arguments: "
         "futures exchange then cash exchange"_sv);
   Config config;
   // note!
   //   absl::flags will have removed all flags and we're left with arguments
   //   arguments should be a list of unix domain sockets
-  auto connections = args.subspan(1u);
+  auto connections = args.subspan(1);
   client::Trader(config, connections).dispatch<Strategy>();
   return EXIT_SUCCESS;
 }
