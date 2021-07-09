@@ -68,13 +68,13 @@ struct fmt::formatter<roq::shared::GridOrder<DIR>> : roq::formatter {
   auto format(const roq::shared::GridOrder<DIR> &value, Context &context) {
     using namespace roq::literals;
     auto out = context.out();
-    roq::format_to(out, "orders#{}:[\n"_fmt, value.orders_.size());
+    roq::format_to(out, "orders#{}:[\n", value.orders_.size());
     for(auto& [id, order]: value.orders_) {
-      roq::format_to(out, " {{order_id: {}, routing_id: {}, {}}},\n"_fmt, id.order_id, id.routing_id_, order);
+      roq::format_to(out, " {{order_id: {}, routing_id: {}, {}}},\n", id.order_id, id.routing_id_, order);
     }
-    roq::format_to(out, "], levels#{}:[\n"_fmt, value.levels_.size());
+    roq::format_to(out, "], levels#{}:[\n", value.levels_.size());
     for(auto const& level: value.levels_) {
-      roq::format_to(out, " {{{}}},\n"_fmt, level);
+      roq::format_to(out, " {{{}}},\n", level);
     }
     roq::format_to(out, "]"_sv);
     return out;

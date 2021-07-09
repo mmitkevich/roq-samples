@@ -4,6 +4,8 @@
 #include <roq/market_status.h>
 
 #include <algorithm>
+#include "roq/format.h"
+#include "roq/literals.h"
 
 #include "roq/client.h"
 #include "roq/logging.h"
@@ -28,8 +30,8 @@ Instrument::Instrument(
 , depth_builder_(client::DepthBuilderFactory::create(symbol, depth_))
 {}
 
-#define ROQ_INFO(FMT, ...) roq::log::info(format_str("[{}:{}] " FMT), exchange(), symbol(), ##__VA_ARGS__)
-#define ROQ_DEBUG(FMT, ...) roq::log::debug(format_str("[{}:{}] " FMT), exchange(), symbol(), ##__VA_ARGS__)
+#define ROQ_INFO(FMT, ...) roq::log::info(std::string_view("[{}:{}] " FMT), exchange(), symbol(), ##__VA_ARGS__)
+#define ROQ_DEBUG(FMT, ...) roq::log::debug(std::string_view("[{}:{}] " FMT), exchange(), symbol(), ##__VA_ARGS__)
 
 void Instrument::operator()(const roq::Connected &) {
   if (flags.set(CONNECTED)) {
@@ -40,7 +42,7 @@ void Instrument::operator()(const roq::Connected &) {
 
 void Instrument::operator()(const roq::Disconnected &) {
   if (flags.reset(CONNECTED)) {
-    ROQ_INFO("connected={}"_fmt, flags.test(CONNECTED));
+    ROQ_INFO("connected={}", flags.test(CONNECTED));
     // reset all cached state - await download upon reconnection
     reset();
   }
@@ -66,7 +68,7 @@ void Instrument::operator()(const roq::DownloadEnd &download_end) {
 }
 
 void Instrument::operator()(const roq::GatewayStatus &gateway_status) {
-  ROQ_INFO("gateway_status {}"_fmt, gateway_status);
+  ROQ_INFO("gateway_status {}", gateway_status);
   utils::Mask<SupportType> available(gateway_status.available),
       unavailable(gateway_status.unavailable);
   if (gateway_status.account.empty()) {
@@ -107,7 +109,7 @@ void Instrument::operator()(const roq::GatewayStatus &gateway_status) {
 
 #define ROQ_FIELD_UPDATE(dst, src, field) \
   if (utils::update((dst).field, (src).field)) \
-    log::info("[{}:{}] {}={}"_fmt, (src).exchange, (src).symbol, #field, (dst).field);
+    log::info(std::string_view{"[{}:{}] {}={}"}, (src).exchange, (src).symbol, #field, (dst).field);
 
 void Instrument::ReferenceData::reset() {
   data_->tick_size = NaN;
@@ -148,7 +150,7 @@ void Instrument::operator()(const MarketStatus &market_status) {
   assert(exchange_.compare(market_status.exchange) == 0);
   assert(symbol_.compare(market_status.symbol) == 0);
   if(status_.update(market_status)) {
-    log::info("[{}:{}] status={{trading_status={}}}"_fmt, exchange(), symbol(), status_.trading_status_);
+    ROQ_INFO("status={{trading_status={}}}", status_.trading_status_);
   }
   // update the ready flag
   check_ready();
@@ -158,10 +160,10 @@ void Instrument::operator()(const MarketByPriceUpdate &market_by_price_update) {
   assert(exchange_.compare(market_by_price_update.exchange) == 0);
   assert(symbol_.compare(market_by_price_update.symbol) == 0);
   if (ROQ_UNLIKELY(flags.test(REALTIME)))
-    log::info("MarketByPriceUpdate={}"_fmt, market_by_price_update);
+    ROQ_INFO("MarketByPriceUpdate={}", market_by_price_update);
   check_ready();
   depth_builder_->update(market_by_price_update);
-  log::trace_1("[{}:{}] depth=[{}]"_fmt, exchange(), symbol(), roq::join(depth_, ", "_sv));
+  ROQ_DEBUG("depth=[{}]", roq::join(depth_, ", "_sv));
   validate(depth_);
 }
 
@@ -169,11 +171,11 @@ void Instrument::operator()(const MarketByOrderUpdate &market_by_order_update) {
   assert(exchange_.compare(market_by_order_update.exchange) == 0);
   assert(symbol_.compare(market_by_order_update.symbol) == 0);
   if (ROQ_UNLIKELY(flags.test(REALTIME)))
-    log::info("MarketByOrderUpdate={}"_fmt, market_by_order_update);
+    ROQ_INFO("MarketByOrderUpdate={}", market_by_order_update);
   /*
   depth_builder_->update(market_by_order_update);
-  log::trace_1(
-      "[{}:{}] depth=[{}]"_fmt,
+  log::debug(
+      "[{}:{}] depth=[{}]",
       exchange_,
       symbol_,
       roq::join(depth_, ", "_sv));
@@ -184,16 +186,16 @@ void Instrument::operator()(const MarketByOrderUpdate &market_by_order_update) {
 /// default behaviour is to override position
 void Instrument::operator()(const roq::PositionUpdate &position_update) {
   assert(account_.compare(position_update.account) == 0);
-  log::info("[{}:{}] position_update={}"_fmt, exchange(), symbol(), position_update);
+  ROQ_INFO("position_update={}", exchange(), symbol(), position_update);
   switch (position_update.side) {
     case Side::UNDEFINED:
     case Side::BUY:
     case Side::SELL: {
       position_ = position_update.position;
-      log::info("[{}:{}] position={}"_fmt, exchange(), symbol(), position_);
+      ROQ_INFO("position={}", exchange(), symbol(), position_);
     }
     default: {
-      log::warn("Unexpected side={}"_fmt, position_update.side);
+      log::warn(std::string_view{"Unexpected side={}"}, position_update.side);
     }
   }
 }
@@ -208,10 +210,10 @@ void Instrument::check_ready() {
     flags.test(MARKETDATA) &&
     true))
   {
-    log::info("[{}:{}] READY={}"_fmt, exchange(), symbol(), flags.test(READY));
+    ROQ_INFO("READY={}", flags.test(READY));
   }
   if(ROQ_UNLIKELY((ready_counter_++)%10)==0) {
-    #define ROQ_DEBUG_FIELD(obj,val) log::debug("[{}:{}] {} = {} "_fmt, exchange(), symbol(), #val, obj.val);
+    #define ROQ_DEBUG_FIELD(obj,val) ROQ_DEBUG(#val " = {} ", obj.val);
 
     ROQ_DEBUG_FIELD(refdata_, tick_size());
     ROQ_DEBUG_FIELD(refdata_, min_trade_vol());
@@ -239,10 +241,10 @@ void Instrument::validate(const Depth &depth) {
     return;
   auto spread = depth[0].ask_price - depth[0].bid_price;
   if (ROQ_UNLIKELY(utils::compare(spread, 0.0) <= 0))
-    log::fatal(
-        "[{}:{}] Probably something wrong: "
+    ROQ_INFO(
+        "Probably something wrong: "
         "choice price or price inversion detected. "
-        "depth=[{}]"_fmt,
+        "depth=[{}]",
         exchange(),
         symbol(),
         roq::join(depth, ", "_sv));

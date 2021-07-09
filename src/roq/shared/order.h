@@ -100,7 +100,7 @@ struct fmt::formatter<roq::shared::LimitOrder> : public roq::formatter {
   template <typename Context>
   auto format(const roq::shared::LimitOrder &order, Context &context) {
     using namespace roq::literals;
-    return roq::format_to(context.out(), "side: {}, price: {}, quantity: {}, flags: {}, prev_routing_id: {}"_fmt,
+    return roq::format_to(context.out(), "side: {}, price: {}, quantity: {}, flags: {}, prev_routing_id: {}",
       order.side(), order.price(), order.quantity(), order.flags, order.prev_routing_id);
   }
 };
@@ -110,7 +110,7 @@ struct fmt::formatter<roq::shared::order_txid_t> : public roq::formatter {
   template <typename Context>
   auto format(const roq::shared::order_txid_t &value, Context &context) {
     using namespace roq::literals;
-    return roq::format_to(context.out(), "order_id:{}, routing_id:{}"_fmt, value.order_id, value.routing_id_);
+    return roq::format_to(context.out(), "order_id:{}, routing_id:{}", value.order_id, value.routing_id_);
   }
 };
 
@@ -125,6 +125,6 @@ struct fmt::formatter<roq::shared::LimitOrder::flags_t> : public roq::formatter 
     ROQ_FLAGS_PRINT(os, value, roq::shared::LimitOrder, PENDING_MODIFY);
     ROQ_FLAGS_PRINT(os, value, roq::shared::LimitOrder, PENDING_CANCEL);
     ROQ_FLAGS_PRINT(os, value, roq::shared::LimitOrder, WORKING);
-    return roq::format_to(context.out(), "{}"_fmt, os.str());
+    return roq::format_to(context.out(), "{}", os.str());
   }
 };

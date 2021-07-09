@@ -14,7 +14,7 @@ using namespace roq::literals;
 template<int DIR>
 template<class Quotes>
 void GridOrder<DIR>::modify(const Quotes& quotes) {
-  log::trace_1("GridOrder<{}>::modify quotes {}"_fmt, quotes);
+  log::debug("GridOrder<{}>::modify quotes {}"_sv, quotes);
   for(auto& level: levels_) {
     level.desired_volume = 0.;
   }
@@ -99,7 +99,7 @@ void GridOrder<DIR>::order_rejected(order_txid_t id, LimitOrder& order, const Or
     level.pending_volume -= order.quantity();
   }
   order.flags = LimitOrder::EMPTY;
-  log::trace_1("GridOrder<{}>::order_rejected: {}"_fmt, side(), *this);
+  log::debug("GridOrder<{}>::order_rejected: {}"_sv, side(), *this);
 }
 
 template<int DIR>
@@ -114,8 +114,8 @@ void GridOrder<DIR>::order_canceled(order_txid_t id, LimitOrder& order, const Or
   }
   order.flags = LimitOrder::EMPTY;
 
-  log::trace_1("GridOrder<{}>::order_canceled: order_id:{}, routing_id:{}, order:{}"_fmt, side(), id.order_id, id.routing_id_, order);
-  log::trace_2("GridOrder<{}>:{}"_fmt, side(), *this);
+  log::debug("GridOrder<{}>::order_canceled: order_id:{}, routing_id:{}, order:{}"_sv, side(), id.order_id, id.routing_id_, order);
+  log::debug("GridOrder<{}>: {}"_sv, side(), *this);
 }
 
 template<int DIR>
@@ -127,8 +127,8 @@ void GridOrder<DIR>::order_completed(order_txid_t id, LimitOrder& order, const O
     level.working_volume -= order_update.remaining_quantity;
   }
   order.flags = LimitOrder::EMPTY;
-  log::trace_1("GridOrder<{}>::order_completed: {}"_fmt, side(), order);
-  log::trace_2("GridOrder<{}>:{}"_fmt,side(), *this);
+  log::debug("GridOrder<{}>::order_completed: {}"_sv, side(), order);
+  log::debug("GridOrder<{}>:{}"_sv,side(), *this);
 }
 
 template<int DIR>
@@ -158,23 +158,23 @@ void GridOrder<DIR>::order_working(order_txid_t id, LimitOrder& order, const Ord
     prev_level.canceling_volume -= prev_order.quantity();
     prev_level.working_volume -= prev_order.quantity();
     assert(prev_order.flags == LimitOrder::EMPTY);
-    log::trace_1("GridOrder<{}>::erase_order order_id:{}, routing_id:{}"_fmt, 
+    log::debug("GridOrder<{}>::erase_order order_id:{}, routing_id:{}"_sv, 
       side(), prev_id.order_id, prev_id.routing_id_);
     orders_.erase(prev_id);
     levels_.shrink();    
   }
-  log::trace_1("GridOrder<{}>::order_working: {}"_fmt, side(), order);
-  log::trace_2("GridOrder<{}>:{}"_fmt, side(), *this);
+  log::debug("GridOrder<{}>::order_working: {}"_sv, side(), order);
+  log::debug("GridOrder<{}>:{}"_sv, side(), *this);
 }
 
 template<int DIR>
 void GridOrder<DIR>::order_updated(const OrderUpdate& order_update) {
   order_txid_t id {order_update.order_id, order_update.routing_id};
-  log::trace_1("GridOrder<{}>::order_updated: order_id: {}, routing_id: {}, order_update: {}"_fmt, side(), id.order_id, id.routing_id_, order_update);
-  log::trace_2("GridOrder<{}>:{}"_fmt, side(), *this);      
+  log::debug("GridOrder<{}>::order_updated: order_id: {}, routing_id: {}, order_update: {}"_sv, side(), id.order_id, id.routing_id_, order_update);
+  log::debug("GridOrder<{}>:{}"_sv, side(), *this);      
   auto it = orders_.find(id);
   if(it==orders_.end()) {
-    log::warn("GridOrder<{}>::order_updated: order_id: {}, routing_id:{}  not found"_fmt, side(), id.order_id, id.routing_id_);
+    log::warn("GridOrder<{}>::order_updated: order_id: {}, routing_id:{}  not found"_sv, side(), id.order_id, id.routing_id_);
     return;
   }
   

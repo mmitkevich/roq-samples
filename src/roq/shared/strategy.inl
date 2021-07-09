@@ -79,7 +79,7 @@ template<class Self, class Instrument>
 void Strategy<Self, Instrument>::operator()(const Event<DownloadEnd> &event) {
   self()->dispatch(event);
   if (utils::update(txid_.order_id, event.value.max_order_id)) {
-    log::info("max_order_id={}"_fmt, txid_.order_id);
+    log::info("max_order_id={}"_sv, txid_.order_id);
   }
 }
 
@@ -109,16 +109,13 @@ void Strategy<Self, Instrument>::operator()(const Event<MarketByPriceUpdate> &ev
 
 template<class Self, class Instrument>
 void Strategy<Self, Instrument>::operator()(const Event<OrderAck> &event) {
-  log::info("OrderAck={}"_fmt, event.value);
+  log::info("OrderAck={}"_sv, event.value);
   auto &order_ack = event.value;
-  if (utils::is_request_complete(order_ack.status)) {
-    // possible extension: reset request timeout
-  }
 }
 
 template<class Self, class Instrument>
 void Strategy<Self, Instrument>::operator()(const Event<OrderUpdate> &event) {
-  log::info("OrderUpdate={}"_fmt, event.value);
+  log::info("OrderUpdate={}"_sv, event.value);
   self()->dispatch(event);  // updates position & quotes
   instrument_id_t iid = instruments_.find_id(SymbolView::from(event));
   assert(iid!=undefined_instrument_id);
@@ -127,7 +124,7 @@ void Strategy<Self, Instrument>::operator()(const Event<OrderUpdate> &event) {
 
 template<class Self, class Instrument>
 void Strategy<Self, Instrument>::operator()(const Event<TradeUpdate> &event) {
-  log::info("TradeUpdate={}"_fmt, event.value);
+  log::info("TradeUpdate={}"_sv, event.value);
 }
 
 template<class Self, class Instrument>
@@ -140,7 +137,7 @@ void Strategy<Self, Instrument>::operator()(const Event<PositionUpdate> &event) 
 
 template<class Self, class Instrument>
 void Strategy<Self, Instrument>::operator()(const Event<FundsUpdate> &event) {
-  log::info("FundsUpdate={}"_fmt, event.value);
+  log::info("FundsUpdate={}"_sv, event.value);
 }
 
 template<class Self, class Instrument>

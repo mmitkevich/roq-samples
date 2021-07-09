@@ -36,7 +36,7 @@ void Model::quotes_updated(Strategy& strategy, instrument_id_t iid) {
     .price_ = ins.ask().price() + 0.5 * quoting_spread(ins),
     .quantity_ = qty
   };
-  log::debug("model: {{ bid:{}, ask:{}, tick:{}, buy:{} sell:{} }}"_fmt,
+  log::debug("model: {{ bid:{}, ask:{}, tick:{}, buy:{} sell:{} }}"_sv,
     ins.bid(), ins.ask(), ins.refdata().tick_size(), buy, sell);
   
   strategy.modify_orders(ins, buy, sell);

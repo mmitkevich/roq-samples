@@ -176,7 +176,7 @@ struct fmt::formatter<roq::shared::Level> : public roq::formatter {
   template <typename Context>
   auto format(const roq::shared::Level &value, Context &context) {
     using namespace roq::literals;
-    return roq::format_to(context.out(), "price: {}, desired:{}, pending:{}, working:{}, canceling:{}"_fmt,
+    return roq::format_to(context.out(), "price: {}, desired:{}, pending:{}, working:{}, canceling:{}",
       value.price, value.desired_volume, value.pending_volume, value.working_volume, value.canceling_volume);
   }
 };

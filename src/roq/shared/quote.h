@@ -5,7 +5,8 @@
 #include <initializer_list>
 #include <iterator>
 #include <limits>
-
+#include "roq/format.h"
+#include "roq/literals.h"
 #include <roq/side.h>
 #include "roq/utils/compare.h"
 #include "roq/numbers.h"
@@ -17,7 +18,7 @@
 namespace roq {
 inline namespace shared {
 
-
+using namespace roq::literals;
 
 inline int to_dir(Side side) {
   switch(side) {
@@ -181,7 +182,7 @@ struct fmt::formatter<roq::shared::Quote> : public roq::formatter {
   template <typename Context>
   auto format(const roq::shared::Quote &value, Context &context) {
     using namespace roq::literals;
-    return roq::format_to(context.out(), "{}:{}"_fmt, value.price(), value.quantity());
+    return roq::format_to(context.out(), "{}:{}", value.price(), value.quantity());
   }
 };
 
@@ -190,7 +191,7 @@ struct fmt::formatter<roq::shared::QuoteArray<MAX_SIZE>> : public roq::formatter
   template <typename Context>
   auto format(const roq::shared::QuoteArray<MAX_SIZE> &value, Context &context) {
     using namespace roq::literals;
-    return roq::format_to(context.out(), "{}:{}"_fmt, value.price(), value.quantity());
+    return roq::format_to(context.out(), "{}:{}", value.price(), value.quantity());
   }
 };
 
@@ -199,6 +200,6 @@ struct fmt::formatter<roq::shared::GridQuote> : public roq::formatter {
   template <typename Context>
   auto format(const roq::shared::GridQuote &value, Context &context) {
     using namespace roq::literals;
-    return roq::format_to(context.out(), "{}:{}"_fmt, value.price(), value.quantity());
+    return roq::format_to(context.out(), "{}:{}", value.price(), value.quantity());
   }
 };

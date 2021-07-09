@@ -79,7 +79,7 @@ struct Instrument {
     : trading_status_(trading_status) {}
     
     bool is_trading_open() const { return trading_status_ == TradingStatus::OPEN; }
-    bool is_auction() const { return trading_status_ == TradingStatus::CLOSED; }
+    bool is_auction() const { return trading_status_ == TradingStatus::CLOSE; }
     bool is_trading_closed() const { return trading_status_ != TradingStatus::OPEN; }
     
     void reset() { trading_status_ = TradingStatus::UNDEFINED; }
