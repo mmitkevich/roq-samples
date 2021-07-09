@@ -3,7 +3,7 @@
 
 #include <type_traits>
 namespace roq {
-namespace shared {
+inline namespace shared {
 
 template<class T>
 struct BitMask {

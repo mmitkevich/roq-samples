@@ -18,24 +18,29 @@ namespace roq {
 
 
 Instrument::Instrument(
-  const std::string_view& symbol,
-  const std::string_view& exchange,
-  const std::string_view& account)
-: Symbol(symbol, exchange)
+  instrument_id_t id,
+  std::string_view symbol,
+  std::string_view exchange,
+  std::string_view account)
+: symbol_(symbol)
+, exchange_(exchange)
 , account_(account)
 , depth_builder_(client::DepthBuilderFactory::create(symbol, depth_))
 {}
 
+#define ROQ_INFO(FMT, ...) roq::log::info(format_str("[{}:{}] " FMT), exchange(), symbol(), ##__VA_ARGS__)
+#define ROQ_DEBUG(FMT, ...) roq::log::debug(format_str("[{}:{}] " FMT), exchange(), symbol(), ##__VA_ARGS__)
+
 void Instrument::operator()(const roq::Connected &) {
   if (flags.set(CONNECTED)) {
-    log::info("[{}:{}] connected={}"_fmt, exchange, symbol, flags.test(CONNECTED));
+    ROQ_INFO("connected={}", exchange(), symbol(), flags.test(CONNECTED));
     check_ready();
   }
 }
 
 void Instrument::operator()(const roq::Disconnected &) {
   if (flags.reset(CONNECTED)) {
-    log::info("[{}:{}] connected={}"_fmt, exchange, symbol, flags.test(CONNECTED));
+    ROQ_INFO("connected={}"_fmt, flags.test(CONNECTED));
     // reset all cached state - await download upon reconnection
     reset();
   }
@@ -47,7 +52,7 @@ void Instrument::operator()(const roq::DownloadBegin &download_begin) {
   assert(!flags.test(DOWNLOADING));
   flags.set(DOWNLOADING);
   flags.reset(REALTIME);
-  log::info("[{}:{}] downloading"_fmt, exchange, symbol);
+  ROQ_INFO("downloading");
 }
 
 void Instrument::operator()(const roq::DownloadEnd &download_end) {
@@ -56,12 +61,12 @@ void Instrument::operator()(const roq::DownloadEnd &download_end) {
   assert(flags.test(DOWNLOADING));
   flags.reset(DOWNLOADING);
   flags.set(REALTIME);
-  log::info("[{}:{}] realtime"_fmt, exchange, symbol);
+  ROQ_INFO("realtime");
   check_ready();
 }
 
 void Instrument::operator()(const roq::GatewayStatus &gateway_status) {
-  log::info("gateway_status {}"_fmt, gateway_status);
+  ROQ_INFO("gateway_status {}"_fmt, gateway_status);
   utils::Mask<SupportType> available(gateway_status.available),
       unavailable(gateway_status.unavailable);
   if (gateway_status.account.empty()) {
@@ -73,10 +78,10 @@ void Instrument::operator()(const roq::GatewayStatus &gateway_status) {
     };
     bool market_data = available.has_all(required) && unavailable.has_none(required);
     if (flags.set(MARKETDATA, market_data))
-      log::info("[{}:{}] market_data"_fmt, exchange, symbol);
+      ROQ_INFO("market_data");
     if (!flags.test(MARKETDATA)) {
       auto missing = required & ~available;
-      log::debug("missing={:#x}"_fmt, missing.get());
+      ROQ_DEBUG("missing={:#x}", missing.get());
     }
   } else if (account_.compare(gateway_status.account) == 0) {
     // bit-mask of required message types
@@ -89,11 +94,11 @@ void Instrument::operator()(const roq::GatewayStatus &gateway_status) {
     // readiness defined by full availability of all required message types
     auto trading = available.has_all(required) && unavailable.has_none(required);
     if (flags.set(TRADING, trading))
-      log::info("[{}:{}] trading"_fmt, exchange, symbol);
+       ROQ_INFO("trading");
     // sometimes useful to see what is missing
     if (!flags.test(MARKETDATA)) {
       auto missing = required & ~available;
-      log::debug("missing={:#x}"_fmt, missing.get());
+      ROQ_DEBUG("missing={:#x}");
     }
   }
   // update the ready flag
@@ -124,8 +129,8 @@ bool Instrument::ReferenceData::is_ready() const {
 }
 
 void Instrument::operator()(const roq::ReferenceData &reference_data) {
-  assert(exchange.compare(reference_data.exchange) == 0);
-  assert(symbol.compare(reference_data.symbol) == 0);
+  assert(exchange_.compare(reference_data.exchange) == 0);
+  assert(symbol_.compare(reference_data.symbol) == 0);
   // update the depth builder
   depth_builder_->update(reference_data);
   // update cached reference data
@@ -140,29 +145,29 @@ bool Instrument::Status::update(const MarketStatus& market_status) {
 }
 
 void Instrument::operator()(const MarketStatus &market_status) {
-  assert(exchange.compare(market_status.exchange) == 0);
-  assert(symbol.compare(market_status.symbol) == 0);
+  assert(exchange_.compare(market_status.exchange) == 0);
+  assert(symbol_.compare(market_status.symbol) == 0);
   if(status_.update(market_status)) {
-    log::info("[{}:{}] status={{trading_status={}}}"_fmt, exchange, symbol, status_.trading_status_);
+    log::info("[{}:{}] status={{trading_status={}}}"_fmt, exchange(), symbol(), status_.trading_status_);
   }
   // update the ready flag
   check_ready();
 }
 
 void Instrument::operator()(const MarketByPriceUpdate &market_by_price_update) {
-  assert(exchange.compare(market_by_price_update.exchange) == 0);
-  assert(symbol.compare(market_by_price_update.symbol) == 0);
+  assert(exchange_.compare(market_by_price_update.exchange) == 0);
+  assert(symbol_.compare(market_by_price_update.symbol) == 0);
   if (ROQ_UNLIKELY(flags.test(REALTIME)))
     log::info("MarketByPriceUpdate={}"_fmt, market_by_price_update);
   check_ready();
   depth_builder_->update(market_by_price_update);
-  log::trace_1("[{}:{}] depth=[{}]"_fmt, exchange, symbol, roq::join(depth_, ", "_sv));
+  log::trace_1("[{}:{}] depth=[{}]"_fmt, exchange(), symbol(), roq::join(depth_, ", "_sv));
   validate(depth_);
 }
 
 void Instrument::operator()(const MarketByOrderUpdate &market_by_order_update) {
-  assert(exchange.compare(market_by_order_update.exchange) == 0);
-  assert(symbol.compare(market_by_order_update.symbol) == 0);
+  assert(exchange_.compare(market_by_order_update.exchange) == 0);
+  assert(symbol_.compare(market_by_order_update.symbol) == 0);
   if (ROQ_UNLIKELY(flags.test(REALTIME)))
     log::info("MarketByOrderUpdate={}"_fmt, market_by_order_update);
   /*
@@ -179,13 +184,13 @@ void Instrument::operator()(const MarketByOrderUpdate &market_by_order_update) {
 /// default behaviour is to override position
 void Instrument::operator()(const roq::PositionUpdate &position_update) {
   assert(account_.compare(position_update.account) == 0);
-  log::info("[{}:{}] position_update={}"_fmt, exchange, symbol, position_update);
+  log::info("[{}:{}] position_update={}"_fmt, exchange(), symbol(), position_update);
   switch (position_update.side) {
     case Side::UNDEFINED:
     case Side::BUY:
     case Side::SELL: {
       position_ = position_update.position;
-      log::info("[{}:{}] position={}"_fmt, exchange, symbol, position_);
+      log::info("[{}:{}] position={}"_fmt, exchange(), symbol(), position_);
     }
     default: {
       log::warn("Unexpected side={}"_fmt, position_update.side);
@@ -203,10 +208,10 @@ void Instrument::check_ready() {
     flags.test(MARKETDATA) &&
     true))
   {
-    log::info("[{}:{}] READY={}"_fmt, exchange, symbol, flags.test(READY));
+    log::info("[{}:{}] READY={}"_fmt, exchange(), symbol(), flags.test(READY));
   }
   if(ROQ_UNLIKELY((ready_counter_++)%10)==0) {
-    #define ROQ_DEBUG_FIELD(obj,val) log::debug("[{}:{}] {} = {} "_fmt, exchange, symbol, #val, obj.val);
+    #define ROQ_DEBUG_FIELD(obj,val) log::debug("[{}:{}] {} = {} "_fmt, exchange(), symbol(), #val, obj.val);
 
     ROQ_DEBUG_FIELD(refdata_, tick_size());
     ROQ_DEBUG_FIELD(refdata_, min_trade_vol());
@@ -238,8 +243,8 @@ void Instrument::validate(const Depth &depth) {
         "[{}:{}] Probably something wrong: "
         "choice price or price inversion detected. "
         "depth=[{}]"_fmt,
-        exchange,
-        symbol,
+        exchange(),
+        symbol(),
         roq::join(depth, ", "_sv));
 }
 

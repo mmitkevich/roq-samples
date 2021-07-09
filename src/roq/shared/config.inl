@@ -2,12 +2,17 @@
 
 #include "config.h"
 
-#include "flags.h"
 
 namespace roq {
-namespace mmaker {
+inline namespace shared {
 
-void Config::dispatch(Handler &handler) const {
+template<class Flags>
+void Config<Flags>::load_config_file(std::string_view config_file_path) {
+    document_ = toml::parse(config_file_path);
+}
+
+template<class Flags>
+void Config<Flags>::dispatch(Handler &handler) const {
   // accounts
   handler(client::Account{
       .regex = Flags::account(),
@@ -23,5 +28,5 @@ void Config::dispatch(Handler &handler) const {
   });
 }
 
-} // namesapce mmaker
+} // namesapce shared
 }  // namespace roq

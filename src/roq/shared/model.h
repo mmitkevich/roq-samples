@@ -5,7 +5,7 @@
 #include "roq/shared/instrument.h"
 
 namespace roq {
-namespace shared {
+inline namespace shared {
 
 struct Model {
   static const constexpr size_t MAX_DEPTH = 3u;

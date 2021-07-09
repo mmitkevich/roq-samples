@@ -7,7 +7,7 @@
 #include "roq/shared/strategy.inl"
 #include "roq/shared/order_map.inl"
 namespace roq {
-namespace shared {
+inline namespace shared {
 
 using namespace roq::literals;
 
@@ -196,7 +196,6 @@ void GridOrder<DIR>::order_updated(const OrderUpdate& order_update) {
       order_working(id, order, order_update);
       break;
     case OrderStatus::SENT:
-    case OrderStatus::PENDING:
     case OrderStatus::ACCEPTED:
       assert(order.flags==LimitOrder::PENDING_NEW || order.flags==LimitOrder::PENDING_MODIFY);
       break;

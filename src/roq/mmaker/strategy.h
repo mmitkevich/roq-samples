@@ -1,23 +1,32 @@
+/* Copyright (c) 2017-2021, Hans Erik Thrane */
+
 #pragma once
 
+#include "roq/mmaker/flags.h"
+#include "roq/mmaker/model.h"
+#include "roq/shared/grid_order.h"
 #include "roq/shared/strategy.h"
-#include "model.h"
+#include "roq/shared/config.h"
 
 namespace roq {
 namespace mmaker {
 
-template<class Model, class Flags>
-struct Strategy : shared::Strategy<Strategy<Model, Flags>> {
-  using Base = shared::Strategy<Strategy<Model, Flags>>;
-  using Base::Base;
+struct Strategy : roq::shared::Strategy<Strategy, shared::QuotingInstrument<shared::GridOrder>> {
+    using Base = roq::shared::Strategy<Strategy, shared::QuotingInstrument<shared::GridOrder>>;
+    using Config = shared::Config<mmaker::Flags>;
+    using Model = mmaker::Model;
 
-  bool enable_trading() { return Flags::enable_trading(); }
-  std::string_view account() { return Flags::account(); }
-  Model& model() { return model_; }
-  auto sample_freq() { return std::chrono::seconds{Flags::sample_freq_secs()}; }
+    Strategy(client::Dispatcher& dispatcher, Config& config) 
+    : Base(dispatcher)
+    , config_(config)
+    , model_(config) {}
+
+    Model& model() { return model_; }
+    Config& config() { return config_; }
 private:
-  Model model_;
+    Config& config_;
+    Model model_;    
 };
 
-} // shared
+} // mmaker
 } // roq

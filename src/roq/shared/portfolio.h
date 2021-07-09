@@ -6,7 +6,7 @@
 #include "roq/numbers.h"
 
 namespace roq {
-namespace shared {
+inline namespace shared {
 
 struct Position {
     Position(double val = NaN)

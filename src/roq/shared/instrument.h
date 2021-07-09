@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "roq/api.h"
+#include <roq/create_order.h>
 #include <roq/exceptions.h>
 #include <roq/market_status.h>
 #include <roq/order_update.h>
@@ -21,22 +22,46 @@
 namespace roq {
 inline namespace shared {
 
-struct Symbol {
-  Symbol(std::string_view symbol, std::string_view exchange)
-  : symbol(symbol)
-  , exchange(exchange) {}
-  friend inline bool operator==(const Symbol& lhs, const Symbol& rhs) {
-    return lhs.symbol == rhs.symbol && lhs.exchange == rhs.exchange;
+struct SymbolView;
+
+struct SymbolView {
+  SymbolView(std::string_view symbol, std::string_view exchange)
+  : symbol_(std::move(symbol))
+  , exchange_(std::move(exchange)) {}
+ 
+  template<class T>
+  static SymbolView from(const T& event);
+
+  template<class RHS>
+  friend inline bool operator==(const SymbolView& lhs, const RHS& rhs) {
+    return lhs.symbol() == rhs.symbol() && lhs.exchange() == rhs.exchange();
   }
+  std::string_view symbol() const { return symbol_; }
+  std::string_view exchange() const { return symbol_; }
 public:
-  std::string_view symbol;
-  std::string_view exchange;
+  std::string_view symbol_;
+  std::string_view exchange_;
 };
+
+namespace detail {
+template<class T>
+struct SymbolView_from {
+  SymbolView operator()(T& value);
+};
+template<class T>
+struct SymbolView_from<Event<T>> {
+  SymbolView operator()(const Event<T> & event) {
+    return SymbolView(event.value.symbol, event.value.exchange);
+  }
+};
+}
+template<class T>
+SymbolView SymbolView::from(const T& event) { return detail::SymbolView_from<T>{}(event); }
 
 using instrument_id_t = int32_t;
 constexpr static instrument_id_t undefined_instrument_id = -1;
 
-struct Instrument : Symbol {
+struct Instrument {
   struct ReferenceData {
     void reset();
     bool update(const roq::ReferenceData& data);
@@ -82,10 +107,14 @@ struct Instrument : Symbol {
   };
 
   Instrument(
-      const std::string_view &exchange,
-      const std::string_view &symbol,
-      const std::string_view &account);
+      instrument_id_t iid,
+      std::string_view symbol,    
+      std::string_view exchange,
+      std::string_view account={}
+      );
 
+  Instrument() = default;
+  
   Instrument(Instrument &&) = default;
   Instrument(const Instrument &) = delete;
 
@@ -101,6 +130,9 @@ struct Instrument : Symbol {
 
   instrument_id_t id() const { return id_; }
   void set_id(instrument_id_t val) { id_ = val; }
+
+  std::string_view symbol() const { return symbol_; }
+  std::string_view exchange() const { return exchange_; }
 
   const ReferenceData& refdata() const { return refdata_; }
 
@@ -138,6 +170,8 @@ struct Instrument : Symbol {
   shared::BitMask<flags_t> flags {};
  private:
   instrument_id_t id_;
+  std::string symbol_;
+  std::string exchange_;
   Account account_;
   Status status_ {};
   ReferenceData refdata_ {};
@@ -148,14 +182,15 @@ struct Instrument : Symbol {
 };
 
 
+
 } // namespace shared
 } // namespace roq
 
 namespace std {
 template<>
-struct hash<roq::shared::Symbol> {
-  std::size_t operator()(const roq::shared::Symbol& value) {
-    return hash<std::string_view>{}(value.symbol) ^ hash<std::string_view>{}(value.exchange);
+struct hash<roq::shared::SymbolView> {
+  std::size_t operator()(const roq::shared::SymbolView& value) {
+    return hash<std::string_view>{}(value.symbol()) ^ hash<std::string_view>{}(value.exchange());
   }
 };
 }

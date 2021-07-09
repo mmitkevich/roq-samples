@@ -6,7 +6,7 @@
 #include "roq/shared/price.h"
 
 namespace roq {
-namespace shared {
+inline namespace shared {
 
 //! price level
 struct Level {

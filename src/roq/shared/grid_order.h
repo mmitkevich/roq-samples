@@ -21,7 +21,7 @@ inline namespace shared {
 template<int DIR>
 struct GridOrder {  
   static_assert(DIR==1 || DIR==-1);
-  GridOrder(OrderMap& orders, price_t tick_size=NaN)
+  GridOrder(LimitOrdersMap& orders, price_t tick_size=NaN)
   : orders_(orders)
   , levels_(tick_size) {}
 
@@ -53,7 +53,7 @@ protected:
   void order_working(order_txid_t id, LimitOrder& order, const OrderUpdate& order_update);
 private:
   Levels<Level, DIR> levels_;       //!< sorted array of price levels
-  OrderMap& orders_;
+  LimitOrdersMap& orders_;
   std::deque<std::pair<order_txid_t, LimitOrder>> pending_orders_; //!< pending insertions
   friend class fmt::formatter<roq::shared::GridOrder<DIR>>;
 };

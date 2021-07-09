@@ -4,7 +4,7 @@
 #include "roq/shared/type_traits.h"
 
 namespace roq {
-namespace shared {
+inline namespace shared {
 
 template<class T>
 struct OrderTraits {

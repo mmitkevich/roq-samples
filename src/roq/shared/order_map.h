@@ -1,12 +1,13 @@
 #pragma once
 
 #include "roq/shared/order.h"
+#include <absl/container/flat_hash_map.h>
 
 namespace roq {
-namespace shared {
+inline namespace shared {
 
 ///  orders and transactions (working, pending, canceling, etc)
-struct OrderMap : private absl::flat_hash_map<order_txid_t, LimitOrder> {
+struct LimitOrdersMap : private absl::flat_hash_map<order_txid_t, LimitOrder> {
     using Base = absl::flat_hash_map<order_txid_t, LimitOrder>;
 
     template<class Context>

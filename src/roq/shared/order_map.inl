@@ -3,18 +3,18 @@
 #include "roq/logging.h"
 
 namespace roq {
-namespace shared {
+inline namespace shared {
 
 
 template<class Context>
-order_txid_t OrderMap::create_order(order_txid_t id, const LimitOrder& new_order, Context& context) {
+order_txid_t LimitOrdersMap::create_order(order_txid_t id, const LimitOrder& new_order, Context& context) {
   auto& pending_order = pending_orders_.emplace_back(id, new_order);
   pending_order.second.flags.set(LimitOrder::PENDING_NEW);
   return id;
 }
 
 template<class Context>
-order_txid_t OrderMap::do_create_order(order_txid_t id, const LimitOrder& new_order, Context& context) {
+order_txid_t LimitOrdersMap::do_create_order(order_txid_t id, const LimitOrder& new_order, Context& context) {
   auto& order = operator[](id) = new_order;
   order.flags = LimitOrder::PENDING_NEW;
   log::trace_1("OrderMap::create_order: order_id:{}, routing_id:{}, order: {{{}}}"_fmt,
@@ -26,7 +26,7 @@ order_txid_t OrderMap::do_create_order(order_txid_t id, const LimitOrder& new_or
 
 // WORKING|PENDING_NEW|PENDING_MODIFY -> PENDING_CANCEL
 template<class Context>
-order_txid_t OrderMap::cancel_order(order_txid_t id, Context& context) {
+order_txid_t LimitOrdersMap::cancel_order(order_txid_t id, Context& context) {
   auto& order = operator[](id);
   order.flags.set(LimitOrder::PENDING_CANCEL);
   log::trace_1("OrderMap::cancel_order: order_id:{}, routing_id:{}, order:{{{}}}"_fmt,
@@ -37,14 +37,14 @@ order_txid_t OrderMap::cancel_order(order_txid_t id, Context& context) {
 } 
 
 template<class Context>
-order_txid_t OrderMap::modify_order(order_txid_t id, const  LimitOrder& new_order, Context& context) {
+order_txid_t LimitOrdersMap::modify_order(order_txid_t id, const  LimitOrder& new_order, Context& context) {
   auto& pending_order = pending_orders_.emplace_back(id, new_order);
   pending_order.second.flags.set(LimitOrder::PENDING_MODIFY);
   return id;
 }
 
 template<class Context>
-order_txid_t OrderMap::do_modify_order(order_txid_t id, const  LimitOrder& new_order, Context& context) {
+order_txid_t LimitOrdersMap::do_modify_order(order_txid_t id, const  LimitOrder& new_order, Context& context) {
   auto& order = operator[](id);
   order.flags.set(LimitOrder::PENDING_CANCEL);
   auto new_id = context.next_order_txid(id.order_id);
@@ -57,7 +57,7 @@ order_txid_t OrderMap::do_modify_order(order_txid_t id, const  LimitOrder& new_o
   return ret;
 }
 template<class Context>
-void OrderMap::flush_orders(Context& context) {
+void LimitOrdersMap::flush_orders(Context& context) {
   // flush the queue
   while(!pending_orders_.empty()) {
     auto& [txid, order] = pending_orders_.front();

@@ -3,7 +3,7 @@
 
 
 namespace roq {
-namespace shared {
+inline namespace shared {
 
 template<class Context>
 bool Model::has_bid_ask(instrument_id_t iid, Context& context) {  // require full depth

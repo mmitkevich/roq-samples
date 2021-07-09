@@ -1,4 +1,6 @@
 /* Copyright (c) 2017-2021, Hans Erik Thrane */
+#pragma once
+
 #include <numeric>
 #include "model.h"
 #include "roq/logging.h"
@@ -9,6 +11,11 @@ namespace mmaker {
 
 using namespace roq::literals;
 
+template<class Config>
+void Model::configure(const Config& config) {
+  quoting_spread_ = config.as_double("quoting_spread");
+}
+  
 /// quotes for instrument has been updated
 template<class Strategy>
 void Model::quotes_updated(Strategy& strategy, instrument_id_t iid) {
@@ -16,21 +23,21 @@ void Model::quotes_updated(Strategy& strategy, instrument_id_t iid) {
     return;
 
   auto& ins = strategy.instruments()[iid];
-  auto tick = ins.refdata().tick_size();
-  auto qty = ins.refdata().min_trade_vol();
+  auto qty = quoting_qty(ins); 
+  auto spread = quoting_spread(ins);
   
   Quote buy { 
     .side_ = Side::BUY,
-    .price_ =  ins.bid().price() - tick*100, 
+    .price_ =  ins.bid().price() - 0.5 * quoting_spread(ins), 
     .quantity_ = qty
   };
   Quote sell {
     .side_ = Side::SELL,
-    .price_ = ins.ask().price() + tick*100,
+    .price_ = ins.ask().price() + 0.5 * quoting_spread(ins),
     .quantity_ = qty
   };
   log::debug("model: {{ bid:{}, ask:{}, tick:{}, buy:{} sell:{} }}"_fmt,
-    ins.bid(), ins.ask(), tick, buy, sell);
+    ins.bid(), ins.ask(), ins.refdata().tick_size(), buy, sell);
   
   strategy.modify_orders(ins, buy, sell);
 }

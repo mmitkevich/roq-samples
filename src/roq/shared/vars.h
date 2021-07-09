@@ -7,7 +7,7 @@
 #include "instrument.h"
 
 namespace roq {
-namespace shared {
+inline namespace shared {
 
 using VarId = std::string_view;
 

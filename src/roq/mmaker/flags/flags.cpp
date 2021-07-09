@@ -62,6 +62,12 @@ ABSL_FLAG(  //
     false,
     "requires an event-log");
 
+ABSL_FLAG(  //
+    std::string,
+    config_file,
+    "",
+    "config file, e.g. config.toml");
+
 namespace roq {
 namespace mmaker {
 
@@ -109,6 +115,11 @@ bool Flags::enable_trading() {
 
 bool Flags::simulation() {
   static const bool result = absl::GetFlag(FLAGS_simulation);
+  return result;
+}
+
+std::string_view Flags::config_file() {
+  static const std::string result = absl::GetFlag(FLAGS_config_file);
   return result;
 }
 

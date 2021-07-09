@@ -12,33 +12,83 @@
 #include "roq/shared/vars.h"
 
 namespace roq {
-namespace shared {
+inline namespace shared {
 
-template<class Self>
+
+// insturments are indexed by integer instrument_id used as plain index for performance
+template<class Instrument>
+struct Instruments {
+  /// find instrument
+  /// @returns undefined_instrument_id if not found
+  instrument_id_t find_id(const SymbolView& sym) {
+    auto sym_it = symbol_to_ins_.find(sym);
+    if(sym_it!=symbol_to_ins_.end()) {
+      return sym_it->second;
+    } else {
+      return undefined_instrument_id;
+    }
+  }
+  std::size_t size() const { return instruments_.size(); }
+
+  template<typename T>
+  int dispatch(const T& event);
+  template<typename T>
+  int broadcast(const T& event);
+
+  /// get or add instrument
+  Instrument& operator[](const SymbolView& sym) {
+    instrument_id_t iid = find_id(sym);
+    if(iid == undefined_instrument_id) {
+      symbol_to_ins_.emplace(sym, iid);
+      return instruments_.emplace_back(Instrument(iid, sym.symbol(), sym.exchange()));
+    }
+    return instruments_[iid];
+  }
+  /// get instrument by index
+  Instrument& operator[](instrument_id_t id) {
+    assert(id!=undefined_instrument_id);
+    instruments_.resize(std::size_t(id)+1);
+    return instruments_[id];
+  }
+private:
+  absl::flat_hash_map<SymbolView, instrument_id_t> symbol_to_ins_;
+  std::vector<Instrument> instruments_;
+};
+
+template<template<int Dir> class Order>
+struct QuotingInstrument: roq::shared::Instrument {
+    using roq::shared::Instrument::Instrument;
+    bool validate_order(LimitOrder& order);
+    using roq::shared::Instrument::operator();
+    Order<1>& buy_order() { return buy_order_; }
+    Order<-1>& sell_order() { return sell_order_; }
+    
+    void operator()(const OrderUpdate &order_update) {
+      switch(order_update.side) {
+        case Side::BUY:  buy_order_.order_updated(order_update); break;
+        case Side::SELL: sell_order_.order_updated(order_update); break;
+        default: assert(false);
+      }
+    }
+  private:
+    PositionLimit<Instrument> limits_ {*this};
+    LimitOrdersMap orders_;      
+    Order<1> buy_order_{orders_};
+    Order<-1> sell_order_{orders_};
+};
+
+template<class Self, class Instrument>
 struct Strategy : client::Handler {
   Self* self() { return static_cast<Self*>(this); }
-  struct Instrument : roq::shared::Instrument {
-      template<class...ArgsT>
-      Instrument(Self& context, ArgsT...args)
-      : roq::shared::Instrument(std::forward<ArgsT>(args)...)
-      , context_(context) {}
-
-      bool validate_order(LimitOrder& order);
-      using roq::shared::Instrument::operator();
-      void operator()(const roq::OrderUpdate &);
-      GridOrder<1>& buy_order() { return buy_order_; }
-      GridOrder<-1>& sell_order() { return sell_order_; }
-    private:
-      PositionLimit<Instrument> limits_ {*this};
-      GridOrder<1> buy_order_;
-      GridOrder<-1> sell_order_;
-      Self& context_;
-  };
-
-  using Instruments = std::vector<Instrument>;
 
   explicit Strategy(client::Dispatcher& dispatcher)
-  : dispatcher_(dispatcher) {}
+  : dispatcher_(dispatcher)
+  {}
+
+  // Derivied should define:
+
+  // Model model();
+  // Config config();
 
   Strategy(Strategy &&) = default;
   Strategy(const Strategy &) = delete;
@@ -50,6 +100,18 @@ struct Strategy : client::Handler {
 
   order_txid_t next_order_txid() { txid_.order_id++; txid_.routing_id_++; return txid_; }
   order_txid_t next_order_txid(order_id_t order_id) { return order_txid_t{order_id, ++txid_.routing_id_}; }
+
+  ROQ_DECLARE_HAS_MEMBER(symbol);
+  ROQ_DECLARE_HAS_MEMBER(exchange);
+
+  template<class T>
+  int dispatch(const T& event) {
+    if constexpr(ROQ_HAS_MEMBER(symbol, T) && ROQ_HAS_MEMBER(exchange, T)) {
+      return instruments_.dispatch(event);
+    } else {
+      return instruments_.broadcast(event);
+    }
+  }
 
   template<class Quotes>
   void modify_orders(Instrument& ins, const Quotes& bid, const Quotes& ask) {
@@ -72,29 +134,15 @@ public:
   void operator()(const Event<PositionUpdate> &) override;
   void operator()(const Event<FundsUpdate> &) override;
 
-  
-  template<class T>
-  instrument_id_t to_instrument_id (const T& event) {
-    auto sym_it = symbol_to_ins_.find(Symbol{event.symbol, event.exchange});
-    if(sym_it!=symbol_to_ins_.end()) {
-      return sym_it->second;
-    } else {
-      return undefined_instrument_id;
-    }
-  }
-
   auto sample_freq() { return std::chrono::seconds{1}; }
   
-  template<typename T>
-  void dispatch(const T& event);
-
   bool validate_quotes(Quote& bid, Quote& ask);
-  Instruments& instruments() { return instruments_; }
+  Instruments<Instrument>& instruments() { return instruments_; }
  private:
-  Instruments instruments_; 
+  bool cache_all_instruments_ = true;
+  Instruments<Instrument> instruments_; 
   client::Dispatcher &dispatcher_;
-  OrderMap orders_;
-  absl::flat_hash_map<Symbol, instrument_id_t> symbol_to_ins_;
+  LimitOrdersMap orders_;
   shared::Variables vars_;
   order_txid_t txid_;
   std::chrono::nanoseconds next_sample_ = {};

@@ -7,12 +7,8 @@
 #include <vector>
 
 #include "roq/client.h"
-#include "roq/exceptions.h"
-
-#include "config.h"
-//#include "roq/utils/mask.h"
+//#include "roq/exceptions.h"
 #include "strategy.h"
-#include "strategy.inl"
 #include "flags.h"
 
 using namespace std::chrono_literals;
@@ -27,7 +23,6 @@ int Application::main_helper(const roq::span<std::string_view> &args) {
     throw RuntimeErrorException("Expected arguments"_sv);
   if (args.size() != 2u)
     throw RuntimeErrorException("Expected exactly one argument"_sv);
-  Config config;
   // note!
   //   absl::flags will have removed all flags and we're left with arguments
   //   arguments can be a list of either
@@ -35,7 +30,10 @@ int Application::main_helper(const roq::span<std::string_view> &args) {
   //   * event logs (simulation)
   auto connections = args.subspan(1);
   
-  using Strategy = mmaker::Strategy<mmaker::Model, mmaker::Flags>;
+  using Strategy = mmaker::Strategy;
+  using Config = mmaker::Strategy::Config;
+  
+  Config config;
 
   if (Flags::simulation()) {
     // collector
@@ -47,10 +45,10 @@ int Application::main_helper(const roq::span<std::string_view> &args) {
     auto matcher = client::detail::SimulationFactory::create_matcher(
         "simple"_sv, Flags::exchange(), market_data_latency, order_manager_latency);
     // simulator
-    client::Simulator(config, connections, *collector, *matcher).dispatch<Strategy>();
+    client::Simulator(config, connections, *collector, *matcher).dispatch<Strategy>(config);
   } else {
     // trader
-    client::Trader(config, connections).dispatch<Strategy>();
+    client::Trader(config, connections).dispatch<Strategy>(config);
   }
   return EXIT_SUCCESS;
 }

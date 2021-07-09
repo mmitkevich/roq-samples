@@ -30,7 +30,7 @@ struct MockStrategy {
   template<int dir>
   auto& get_order();
     
-  order_txid_t create_order(order_txid_t id, const LimitOrder& order) {
+  shared::order_txid_t create_order(shared::order_txid_t id, const shared::LimitOrder& order) {
     create_count++;
     log::info("MockStrategy::create_order ( order_id: {}, routing_id: {}, side: {}, price: {}, qty: {}, flags: {} )"_fmt
       , id.order_id, id.routing_id_, order.side(), order.price(), order.quantity(), order.flags);
@@ -43,7 +43,7 @@ struct MockStrategy {
     return id;
   }
 
-  order_txid_t cancel_order(order_txid_t id, const LimitOrder& order) {
+  shared::order_txid_t cancel_order(shared::order_txid_t id, const shared::LimitOrder& order) {
     cancel_count++;
     log::info("MockStrategy::cancel_order ( order_id: {}, routing_id: {}, side: {}, price: {}, qty: {}, flags: {}  )\n"_fmt
       , id.order_id, id.routing_id_, order.side(), order.price(), order.quantity(), order.flags);
@@ -57,7 +57,7 @@ struct MockStrategy {
   }
 
   //! returns new client order id
-  order_txid_t modify_order(order_txid_t id, const LimitOrder& order) {
+  shared::order_txid_t modify_order(shared::order_txid_t id, const shared::LimitOrder& order) {
     modify_count++;
     log::info("MockStrategy::modify_order ( order_id: {}, routing_id: {}, side: {}, price: {}, qty: {}, prev_routing_id:{}, flags: {} )\n"_fmt
       , id.order_id, id.routing_id_, order.side(), order.price(), order.quantity(), order.prev_routing_id, order.flags);      
@@ -71,25 +71,25 @@ struct MockStrategy {
   }
 
   // new order, new tx
-  order_txid_t next_order_txid() { 
+  shared::order_txid_t next_order_txid() { 
     ++next_txid_.order_id;
     ++next_txid_.routing_id_;
     return next_txid_; 
   }
   
   // same order, new tx
-  order_txid_t next_order_txid(order_id_t id) { 
+  shared::order_txid_t next_order_txid(order_id_t id) { 
     order_txid_t txid {id, ++next_txid_.routing_id_};
     return txid; 
   }
 
-  order_txid_t next_txid_;
+  shared::order_txid_t next_txid_;
   
-  constexpr static price_t s_tick_size = 1.0;
+  constexpr static shared::price_t s_tick_size = 1.0;
 
   GridOrder<1> bid{orders, s_tick_size};
   GridOrder<-1> ask{orders, s_tick_size};
-  OrderMap orders;
+  LimitOrdersMap orders;
   int create_count = 0;
   int modify_count = 0;
   int cancel_count = 0;

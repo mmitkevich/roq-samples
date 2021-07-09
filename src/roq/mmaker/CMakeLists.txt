@@ -5,10 +5,10 @@ add_subdirectory(flags)
 add_executable(
   "${TARGET_NAME}"
   application.cpp
-  config.cpp
   ../shared/ema.cpp
   ../shared/instrument.cpp
   ../shared/strategy.cpp
+  model.inl
   model.cpp
   main.cpp)
 

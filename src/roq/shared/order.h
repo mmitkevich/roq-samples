@@ -15,7 +15,7 @@
 #include "roq/shared/bitmask.h"
 
 namespace roq {
-inline namespace shared {
+namespace shared {
 
 using order_id_t = uint32_t;
 constexpr static order_id_t undefined_order_id = 0;
@@ -88,7 +88,7 @@ public:
 
 namespace std {
 template<>
-struct hash<roq::order_txid_t> {
+struct hash<roq::shared::order_txid_t> {
   std::size_t operator()(const roq::shared::order_txid_t& txid) {
     return txid.order_id | (static_cast<std::size_t>(txid.routing_id_)<<(8*sizeof(txid.order_id)));
   }
@@ -106,9 +106,9 @@ struct fmt::formatter<roq::shared::LimitOrder> : public roq::formatter {
 };
 
 template <>
-struct fmt::formatter<roq::order_txid_t> : public roq::formatter {
+struct fmt::formatter<roq::shared::order_txid_t> : public roq::formatter {
   template <typename Context>
-  auto format(const roq::order_txid_t &value, Context &context) {
+  auto format(const roq::shared::order_txid_t &value, Context &context) {
     using namespace roq::literals;
     return roq::format_to(context.out(), "order_id:{}, routing_id:{}"_fmt, value.order_id, value.routing_id_);
   }
