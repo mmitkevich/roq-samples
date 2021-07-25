@@ -16,15 +16,17 @@ struct Strategy : roq::shared::Strategy<Strategy, shared::QuotingInstrument<shar
     using Config = shared::Config<mmaker::Flags>;
     using Model = mmaker::Model;
 
-    Strategy(client::Dispatcher& dispatcher, Config& config) 
+    Strategy(client::Dispatcher& dispatcher, Config config) 
     : Base(dispatcher)
-    , config_(config)
-    , model_(config) {}
+    , config_(std::move(config))
+    , model_(config) {
+        self()->configure(config);
+    }
 
     Model& model() { return model_; }
     Config& config() { return config_; }
 private:
-    Config& config_;
+    Config config_;
     Model model_;    
 };
 

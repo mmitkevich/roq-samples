@@ -49,6 +49,14 @@ namespace {
 }
 
 template<class Self, class Instrument>
+template<class Config>
+void Strategy<Self,Instrument>::configure(const Config& config) {
+  for(const auto ins_config: config["instruments"]) {
+    instruments_.emplace(Instrument{ins_config});
+  }
+}
+
+template<class Self, class Instrument>
 void Strategy<Self, Instrument>::operator()(const Event<Timer> &event) {
   // note! using system clock (*not* the wall clock)
   if (event.value.now < next_sample_)
@@ -101,7 +109,7 @@ void Strategy<Self, Instrument>::operator()(const Event<MarketStatus> &event) {
 template<class Self, class Instrument>
 void Strategy<Self, Instrument>::operator()(const Event<MarketByPriceUpdate> &event) {
   self()->dispatch(event);
-  auto iid = instruments_.find_id(SymbolView::from(event));
+  auto iid = instruments_.find_id(SymbolView(event));
   if(iid != undefined_instrument_id) {
     self()->model().quotes_updated(*this, iid);
   }
@@ -117,7 +125,7 @@ template<class Self, class Instrument>
 void Strategy<Self, Instrument>::operator()(const Event<OrderUpdate> &event) {
   log::info("OrderUpdate={}"_sv, event.value);
   self()->dispatch(event);  // updates position & quotes
-  instrument_id_t iid = instruments_.find_id(SymbolView::from(event));
+  instrument_id_t iid = instruments_.find_id(SymbolView(event));
   assert(iid!=undefined_instrument_id);
   self()->model().position_updated(iid, *this);
 }
@@ -130,7 +138,7 @@ void Strategy<Self, Instrument>::operator()(const Event<TradeUpdate> &event) {
 template<class Self, class Instrument>
 void Strategy<Self, Instrument>::operator()(const Event<PositionUpdate> &event) {
   self()->dispatch(event);
-  instrument_id_t iid = instruments_.find_id(SymbolView::from(event));
+  instrument_id_t iid = instruments_.find_id(SymbolView(event));
   assert(iid!=undefined_instrument_id);
   self()->model().position_updated(iid, *this);  
 }

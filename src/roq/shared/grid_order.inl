@@ -4,6 +4,7 @@
 #include "roq/shared/order.h"
 #include "roq/logging.h"
 
+#include "roq/shared/price.h"
 #include "roq/shared/strategy.inl"
 #include "roq/shared/order_map.inl"
 namespace roq {
@@ -21,7 +22,8 @@ void GridOrder<DIR>::modify(const Quotes& quotes) {
   std::size_t sze = quotes.size();
   for(std::size_t i=0; i<sze; i++) {
     auto quote = quotes[i];
-    levels_[quote.price()].desired_volume = quote.quantity();
+    if(!is_undefined_price(quote.price()))
+      levels_[quote.price()].desired_volume = quote.quantity();
   }
 }
 

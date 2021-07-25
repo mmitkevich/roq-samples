@@ -13,7 +13,7 @@ using namespace roq::literals;
 
 template<class Config>
 void Model::configure(const Config& config) {
-  quoting_spread_ = config.as_double("quoting_spread");
+  quoting_spread_ = config.double_value("quoting_spread");
 }
   
 /// quotes for instrument has been updated
@@ -36,10 +36,12 @@ void Model::quotes_updated(Strategy& strategy, instrument_id_t iid) {
     .price_ = ins.ask().price() + 0.5 * quoting_spread(ins),
     .quantity_ = qty
   };
+  
   log::debug("model: {{ bid:{}, ask:{}, tick:{}, buy:{} sell:{} }}"_sv,
     ins.bid(), ins.ask(), ins.refdata().tick_size(), buy, sell);
   
-  strategy.modify_orders(ins, buy, sell);
+  strategy.modify_buy_order(ins, buy);
+  strategy.modify_sell_order(ins, sell);
 }
 
 template<class Strategy>

@@ -24,14 +24,17 @@ inline namespace shared {
 
 struct SymbolView;
 
+
+
 struct SymbolView {
   SymbolView(std::string_view symbol, std::string_view exchange)
   : symbol_(std::move(symbol))
   , exchange_(std::move(exchange)) {}
  
   template<class T>
-  static SymbolView from(const T& event);
-
+  explicit SymbolView(const T& obj) : SymbolView(to_symbol_view(obj)) {}
+  SymbolView(const SymbolView& obj) = default;
+  
   template<class RHS>
   friend inline bool operator==(const SymbolView& lhs, const RHS& rhs) {
     return lhs.symbol() == rhs.symbol() && lhs.exchange() == rhs.exchange();
@@ -43,20 +46,12 @@ public:
   std::string_view exchange_;
 };
 
-namespace detail {
 template<class T>
-struct SymbolView_from {
-  SymbolView operator()(T& value);
-};
+inline SymbolView to_symbol_view(const T& obj) { return SymbolView(obj.symbol(), obj.exchange()); }
+
 template<class T>
-struct SymbolView_from<Event<T>> {
-  SymbolView operator()(const Event<T> & event) {
-    return SymbolView(event.value.symbol, event.value.exchange);
-  }
-};
-}
-template<class T>
-SymbolView SymbolView::from(const T& event) { return detail::SymbolView_from<T>{}(event); }
+inline SymbolView to_symbol_view(const Event<T>& event) { return SymbolView(event.value.symbol, event.value.exchange); }
+
 
 using instrument_id_t = int32_t;
 constexpr static instrument_id_t undefined_instrument_id = -1;
@@ -73,7 +68,6 @@ struct Instrument {
   private:
     std::unique_ptr<roq::ReferenceData> data_ = std::make_unique<roq::ReferenceData>();
   };
-  
   struct Status {
     Status(TradingStatus trading_status=TradingStatus::UNDEFINED)
     : trading_status_(trading_status) {}
@@ -113,8 +107,24 @@ struct Instrument {
       std::string_view account={}
       );
 
+  template<class Config>
+  Instrument(const Config& config) {
+    configure(config);
+  }
+  
   Instrument() = default;
   
+  template<class Config>
+  void configure(const Config& config) {
+    log::debug("config:{}"_sv, config);
+    symbol_ = config.string_value("symbol");
+    exchange_ = config.string_value("exchange");
+    post_configure();
+    //account_ = config.value_or("account", "");
+  }
+  
+  void post_configure();
+
   Instrument(Instrument &&) = default;
   Instrument(const Instrument &) = delete;
 
@@ -186,11 +196,18 @@ struct Instrument {
 } // namespace shared
 } // namespace roq
 
-namespace std {
 template<>
-struct hash<roq::shared::SymbolView> {
+struct std::hash<roq::shared::SymbolView> {
   std::size_t operator()(const roq::shared::SymbolView& value) {
-    return hash<std::string_view>{}(value.symbol()) ^ hash<std::string_view>{}(value.exchange());
+    return std::hash<std::string_view>{}(value.symbol()) ^std:: hash<std::string_view>{}(value.exchange());
   }
 };
-}
+
+template <>
+struct fmt::formatter<roq::shared::SymbolView> : public roq::formatter {
+  template <typename Context>
+  auto format(const roq::shared::SymbolView &value, Context &context) {
+    using namespace roq::literals;
+    return roq::format_to(context.out(), "symbol:'{}', exchange:'{}'", value.symbol(), value.exchange());
+  }
+};

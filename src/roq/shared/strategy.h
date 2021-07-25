@@ -39,10 +39,23 @@ struct Instruments {
   Instrument& operator[](const SymbolView& sym) {
     instrument_id_t iid = find_id(sym);
     if(iid == undefined_instrument_id) {
+      iid = instruments_.size();
       symbol_to_ins_.emplace(sym, iid);
+      log::debug("symbol_to_ins(sym:{} iid:{})"_sv, sym, iid);
       return instruments_.emplace_back(Instrument(iid, sym.symbol(), sym.exchange()));
     }
     return instruments_[iid];
+  }
+
+  Instrument& emplace(Instrument&& ins) {
+    instrument_id_t iid = find_id(SymbolView(ins));
+    assert(iid==undefined_instrument_id);
+    iid = instruments_.size();
+    auto& result =  instruments_.emplace_back(std::move(ins));
+    auto sym = SymbolView(result);
+    symbol_to_ins_.emplace(sym, iid);
+    log::debug("symbol_to_ins(sym:{} iid:{})"_sv, sym, iid);
+    return result;
   }
   /// get instrument by index
   Instrument& operator[](instrument_id_t id) {
@@ -58,6 +71,7 @@ private:
 template<template<int Dir> class Order>
 struct QuotingInstrument: roq::shared::Instrument {
     using roq::shared::Instrument::Instrument;
+
     bool validate_order(LimitOrder& order);
     using roq::shared::Instrument::operator();
     Order<1>& buy_order() { return buy_order_; }
@@ -83,7 +97,8 @@ struct Strategy : client::Handler {
 
   explicit Strategy(client::Dispatcher& dispatcher)
   : dispatcher_(dispatcher)
-  {}
+  {
+  }
 
   // Derivied should define:
 
@@ -93,6 +108,8 @@ struct Strategy : client::Handler {
   Strategy(Strategy &&) = default;
   Strategy(const Strategy &) = delete;
 
+  template<class Config>
+  void configure(const Config& config);
   //! returns new order_id+routing_id
   order_txid_t create_order(order_txid_t id, const LimitOrder& new_order);
   order_txid_t cancel_order(order_txid_t id, const LimitOrder& order);
@@ -114,9 +131,12 @@ struct Strategy : client::Handler {
   }
 
   template<class Quotes>
-  void modify_orders(Instrument& ins, const Quotes& bid, const Quotes& ask) {
-    ins.buy_order().modify(bid);
-    ins.sell_order().modify(ask);
+  void modify_buy_order(Instrument& ins, const Quotes& quotes) {
+    ins.buy_order().modify(quotes);
+  }
+  template<class Quotes>
+  void modify_sell_order(Instrument& ins, const Quotes& quotes) {
+    ins.sell_order().modify(quotes);
   }
 public:
   void operator()(const Event<Timer> &) override;

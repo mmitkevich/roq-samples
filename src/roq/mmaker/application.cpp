@@ -33,7 +33,8 @@ int Application::main_helper(const roq::span<std::string_view> &args) {
   using Strategy = mmaker::Strategy;
   using Config = mmaker::Strategy::Config;
   
-  Config config;
+  auto doc = Config::parse_file(Flags::config_file());
+  Config config(doc);
 
   if (Flags::simulation()) {
     // collector

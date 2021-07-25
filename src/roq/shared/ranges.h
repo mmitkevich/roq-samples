@@ -26,11 +26,12 @@ struct TransformedIterator {
   Iterator iterator_;
   Fn fn_;
 };
+} // namespace detail
+
 template<class Iterator, class Fn>
 auto transform_iterator(Iterator iterator, Fn&&fn) {
-  return TransformedIterator<Iterator, Fn>(iterator, std::move(fn));
+  return detail::TransformedIterator<Iterator, Fn>(iterator, std::move(fn));
 }
-} // namespace detail
 
 } // namespace ranges
 } // namespace roq

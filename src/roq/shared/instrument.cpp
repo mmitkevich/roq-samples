@@ -27,8 +27,14 @@ Instrument::Instrument(
 : symbol_(symbol)
 , exchange_(exchange)
 , account_(account)
-, depth_builder_(client::DepthBuilderFactory::create(symbol, depth_))
-{}
+{
+  post_configure();
+}
+
+void Instrument::post_configure() {
+  depth_builder_ = client::DepthBuilderFactory::create(symbol_, depth_);
+  depth_builder_->reset();
+}
 
 #define ROQ_INFO(FMT, ...) roq::log::info(std::string_view("[{}:{}] " FMT), exchange(), symbol(), ##__VA_ARGS__)
 #define ROQ_DEBUG(FMT, ...) roq::log::debug(std::string_view("[{}:{}] " FMT), exchange(), symbol(), ##__VA_ARGS__)
@@ -133,6 +139,7 @@ bool Instrument::ReferenceData::is_ready() const {
 void Instrument::operator()(const roq::ReferenceData &reference_data) {
   assert(exchange_.compare(reference_data.exchange) == 0);
   assert(symbol_.compare(reference_data.symbol) == 0);
+  assert(depth_builder_);
   // update the depth builder
   depth_builder_->update(reference_data);
   // update cached reference data
@@ -231,7 +238,8 @@ void Instrument::reset() {
   flags.reset();
   refdata_.reset();
   status_.reset();
-  depth_builder_->reset();
+  assert(depth_builder_);
+  depth_builder_->reset();// = client::DepthBuilderFactory::create(symbol, depth_);
   position_.reset();
 }
 
